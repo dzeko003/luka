@@ -7,8 +7,8 @@ const num = (v: string | undefined, d: number) => {
 
 export const limits = {
   free: {
-    collectesPerDay: num(process.env.FREE_COLLECTES_PER_DAY, 3),
-    maxRows: num(process.env.FREE_MAX_ROWS, 20),
+    collectesPerDay: num(process.env.FREE_COLLECTES_PER_DAY, 5),
+    maxRows: num(process.env.FREE_MAX_ROWS, 200),
     maxQueries: num(process.env.FREE_MAX_QUERIES, 3),
     pagesPerQuery: 4,
     charsPerPage: 6000,
