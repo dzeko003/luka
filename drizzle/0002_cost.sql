@@ -1,0 +1,1 @@
+ALTER TABLE "collectes" ADD COLUMN "cost_usd" real DEFAULT 0 NOT NULL;

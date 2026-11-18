@@ -1,26 +1,139 @@
 @import "tailwindcss";
 
+/* Palette inspirée de la maquette « Ask.ai » : blanc, encre violet nuit, violet vif. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --bg: #f7f7f9;
+  --surface: #ffffff;
+  --surface-2: #f4f4f7;
+  --border: #ebebf0;
+  --text: #14112b;
+  --muted: #8b889b;
+  --accent: #5b3df5;
+  --accent-hover: #4a2ee0;
+  --accent-soft: #efebff;
+  --accent-text: #ffffff;
+  --ink: #14112b;
+  --danger: #d92d20;
+  --danger-soft: #fef0ef;
+  --warn: #b54708;
+  --warn-soft: #fff4e5;
+  --info: #5b3df5;
+  --info-soft: #efebff;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #0d0c14;
+    --surface: #15131f;
+    --surface-2: #1c1a28;
+    --border: #2a2738;
+    --text: #f1f0f7;
+    --muted: #9a97ab;
+    --accent: #8b74ff;
+    --accent-hover: #a08eff;
+    --accent-soft: #241d45;
+    --accent-text: #ffffff;
+    --ink: #f1f0f7;
+    --danger: #f97066;
+    --danger-soft: #3a1917;
+    --warn: #f5b04f;
+    --warn-soft: #33240f;
+    --info: #8b74ff;
+    --info-soft: #241d45;
   }
 }
 
+/* Espace connecté : console sombre inspirée du tableau de bord d'Apify (anthracite, bordures fines, violet). */
+.console {
+  --bg: #161718;
+  --surface: #1b1c1d;
+  --surface-2: #242528;
+  --bar: #1f2123;
+  --border: #333538;
+  --border-strong: #3e3e43;
+  --text: #f3f4f6;
+  --muted: #a3a6ad;
+  --accent: #6a5cfc;
+  --accent-hover: #7c70ff;
+  --accent-soft: #2a2550;
+  --accent-text: #ffffff;
+  --link: #9a90ff;
+  --ink: #f3f4f6;
+  --danger: #f5664f;
+  --danger-soft: #3a1d18;
+  --warn: #f5b04f;
+  --warn-soft: #33260f;
+  --info: #9a90ff;
+  --info-soft: #2a2550;
+  color-scheme: dark;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-console), system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-ink: var(--ink);
+  --color-bar: var(--bar, var(--surface-2));
+  --color-border-strong: var(--border-strong, var(--border));
+  --color-link: var(--link, var(--accent));
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono-face);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+@utility btn-primary {
+  @apply btn bg-accent text-accent-text hover:bg-accent-hover;
+}
+
+@utility btn-ink {
+  @apply btn bg-ink text-bg hover:opacity-90;
+}
+
+@utility btn-ghost {
+  @apply btn border border-border-strong bg-transparent text-text hover:bg-surface-2;
+}
+
+@utility btn-danger {
+  @apply btn border border-border-strong bg-transparent text-danger hover:bg-danger-soft;
+}
+
+@utility card {
+  @apply rounded-lg border border-border-strong bg-surface;
+}
+
+@utility input {
+  @apply w-full rounded-md border border-border-strong bg-bg px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-accent focus:ring-2 focus:ring-accent/15;
+}
+
+@utility label {
+  @apply mb-1.5 block text-[13px] font-medium;
+}
+
+@utility icon-box {
+  @apply grid size-8 shrink-0 place-items-center rounded-md border border-border-strong bg-surface-2 text-muted;
 }
