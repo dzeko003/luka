@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Luka — Proposition B · Chaleureux et africain</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700;9..144,900&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root { --bg:#f6efe3; --ink:#1d1a16; --muted:#6e6458; --terra:#c4522a; --green:#0f6b4b; --sun:#f1b434; --line:#e3d7c4; --card:#fffaf2; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--ink); font-family:'DM Sans', sans-serif; overflow-x:hidden; }
+  a { color:inherit; text-decoration:none; }
+  .wrap { max-width:1200px; margin:0 auto; padding:0 24px; }
+  .band { height:14px; background:
+      repeating-linear-gradient(90deg, var(--terra) 0 28px, var(--sun) 28px 42px, var(--green) 42px 70px, var(--ink) 70px 76px); }
+  nav { display:flex; align-items:center; justify-content:space-between; height:80px; }
+  .logo { font-family:Fraunces; font-weight:900; font-size:28px; letter-spacing:-.02em; }
+  .logo span { color:var(--terra); }
+  .btn { display:inline-flex; align-items:center; gap:8px; padding:13px 22px; border-radius:999px; font-weight:700; font-size:15px; }
+  .btn-d { background:var(--ink); color:var(--bg); }
+  .btn-t { background:var(--terra); color:#fff; }
+  .btn-l { border:1.5px solid var(--ink); }
+  .hero { display:grid; grid-template-columns:1.1fr 1fr; gap:48px; align-items:center; padding:60px 0 90px; }
+  .kicker { font-weight:700; color:var(--terra); text-transform:uppercase; letter-spacing:.14em; font-size:13px; }
+  h1 { font-family:Fraunces; font-weight:900; font-size:clamp(44px,6vw,84px); line-height:.98; letter-spacing:-.03em; margin:18px 0 0; }
+  h1 em { font-style:italic; font-weight:500; color:var(--green); }
+  .sub { font-size:19px; line-height:1.6; color:var(--muted); margin:26px 0 34px; max-width:520px; }
+  .art { position:relative; aspect-ratio:1/1.05; }
+  .pattern { position:absolute; inset:0; border-radius:28px; background:var(--green);
+    background-image:
+      radial-gradient(circle at 25% 25%, var(--sun) 0 9%, transparent 9.5%),
+      radial-gradient(circle at 75% 75%, var(--sun) 0 9%, transparent 9.5%),
+      linear-gradient(45deg, transparent 46%, rgba(255,255,255,.12) 46% 54%, transparent 54%),
+      linear-gradient(-45deg, transparent 46%, rgba(255,255,255,.12) 46% 54%, transparent 54%);
+    background-size:120px 120px; }
+  .note { position:absolute; background:var(--card); border-radius:18px; padding:18px 20px; box-shadow:0 20px 40px -12px rgba(29,26,22,.35); }
+  .note.n1 { left:-28px; top:36px; width:300px; transform:rotate(-3deg); }
+  .note.n2 { right:-14px; bottom:40px; width:330px; transform:rotate(2deg); }
+  .note small { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.1em; font-weight:700; }
+  .note p { font-family:Fraunces; font-size:20px; margin-top:6px; line-height:1.25; }
+  .note ul { list-style:none; padding:0; margin-top:10px; font-size:14px; }
+  .note li { display:flex; justify-content:space-between; padding:7px 0; border-top:1px dashed var(--line); }
+  .note li b { font-weight:700; }
+  .ok { color:var(--green); font-weight:700; }
+  .cities { display:flex; gap:12px; flex-wrap:wrap; padding:26px 0; border-top:1.5px solid var(--ink); border-bottom:1.5px solid var(--ink); font-family:Fraunces; font-size:24px; justify-content:space-between; }
+  .cities span:nth-child(even) { color:var(--terra); }
+  .how { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; padding:90px 0; }
+  .step { background:var(--card); border:1.5px solid var(--ink); border-radius:24px; padding:30px; box-shadow:6px 6px 0 var(--ink); }
+  .step .num { font-family:Fraunces; font-size:56px; font-weight:900; color:var(--terra); line-height:1; }
+  .step h3 { font-family:Fraunces; font-size:26px; margin:14px 0 8px; }
+  .step p { color:var(--muted); line-height:1.6; }
+  .tag { position:fixed; bottom:16px; right:16px; background:var(--ink); color:#fff; padding:8px 12px; border-radius:8px; font-size:12px; font-weight:700; }
+  @media (max-width:860px) { .hero, .how { grid-template-columns:1fr; } .note.n1{left:8px} .note.n2{right:8px} }
+</style>
+</head>
+<body>
+<div class="band"></div>
+<div class="wrap">
+  <nav>
+    <a class="logo" href="#">luka<span>.</span></a>
+    <div style="display:flex;gap:10px"><a class="btn btn-l" href="#">Connexion</a><a class="btn btn-d" href="#">Créer un compte</a></div>
+  </nav>
+  <section class="hero">
+    <div>
+      <span class="kicker">« Luka » : chercher, en lingala</span>
+      <h1>Toutes les infos du <em>Congo</em> et d'ailleurs, en un tableau.</h1>
+      <p class="sub">Mairies, écoles, hôpitaux, lieux à visiter, entreprises… Décris ce que tu cherches, Luka parcourt le web et te ramène des données avec leurs sources.</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap"><a class="btn btn-t" href="#">Lancer ma première collecte →</a><a class="btn btn-l" href="#">Voir un exemple</a></div>
+    </div>
+    <div class="art">
+      <div class="pattern"></div>
+      <div class="note n1"><small>Ta demande</small><p>« Les lieux à visiter à Pointe-Noire »</p></div>
+      <div class="note n2"><small>Luka a trouvé 14 lieux</small>
+        <ul>
+          <li><b>Côte sauvage</b><span class="ok">✓ source</span></li>
+          <li><b>Gorges de Diosso</b><span class="ok">✓ source</span></li>
+          <li><b>Musée Mâ Loango</b><span class="ok">✓ source</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+  <div class="cities"><span>Brazzaville</span><span>Pointe-Noire</span><span>Dolisie</span><span>Douala</span><span>Kinshasa</span><span>Libreville</span></div>
+  <section class="how">
+    <div class="step"><div class="num">1</div><h3>Tu demandes</h3><p>En français, simplement. Luka propose les colonnes de ton tableau.</p></div>
+    <div class="step"><div class="num">2</div><h3>Luka cherche</h3><p>Il lit les pages web et remplit le tableau ligne par ligne.</p></div>
+    <div class="step"><div class="num">3</div><h3>Tu vérifies et tu exportes</h3><p>Chaque ligne a sa source. Tu valides, puis tu télécharges en Excel.</p></div>
+  </section>
+</div>
+<span class="tag">Proposition B · Chaleureux et africain</span>
+</body>
+</html>

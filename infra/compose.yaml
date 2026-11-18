@@ -1,0 +1,99 @@
+# Production de Luka sur le VPS, dans /srv/luka (voir infra/README.md).
+# .release : version et domaine · secrets.env : mots de passe générés sur le serveur
+# web.env : clés des services (IA, recherche web…), jamais versionné.
+
+name: luka
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "5"
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+x-database-url: &database-url
+  DATABASE_URL: postgres://luka:${POSTGRES_PASSWORD:?}@db:5432/luka
+
+services:
+  db:
+    <<: *logging
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: luka
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: luka
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U luka -d luka"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [data]
+    restart: unless-stopped
+
+  migrate:
+    <<: [*logging, *hardening]
+    image: luka-migrate:${LUKA_VERSION:?}
+    environment: *database-url
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [data]
+    restart: "no"
+    profiles: [tools]
+
+  web:
+    <<: [*logging, *hardening]
+    image: luka-web:${LUKA_VERSION:?}
+    env_file: [web.env]
+    environment:
+      <<: *database-url
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?}
+      BETTER_AUTH_URL: https://${LUKA_DOMAIN:?}
+    tmpfs:
+      - /tmp
+      - /app/.next/cache:uid=1000,gid=1000
+    depends_on:
+      db: { condition: service_healthy }
+    # Le proxy commun du serveur (/srv/edge) joint l'app sous ce nom ; aucun port n'est ouvert.
+    networks:
+      edge:
+        aliases: [luka-web]
+      data:
+    restart: unless-stopped
+
+  # Sauvegarde quotidienne de la base dans /srv/luka/backups (14 jours conservés)
+  backup:
+    <<: *logging
+    image: postgres:17-alpine
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          f=/backups/luka-$$(date +%Y%m%d-%H%M).sql.gz
+          pg_dump -h db -U luka luka | gzip > "$$f.tmp" && mv "$$f.tmp" "$$f" && echo "Sauvegarde : $$f"
+          find /backups -name 'luka-*.sql.gz' -mtime +14 -delete
+          sleep 86400
+        done
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [data]
+    restart: unless-stopped
+
+volumes:
+  db-data:
+
+networks:
+  edge:
+    external: true
+  data:
+    internal: true

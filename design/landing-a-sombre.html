@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Luka — Proposition A · Sombre et premium</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root { --bg:#07090a; --panel:#0e1213; --line:#1c2325; --text:#eef2f1; --muted:#8a9694; --green:#3ddc84; --green-2:#16a34a; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text); font-family:Manrope, sans-serif; overflow-x:hidden; }
+  a { color:inherit; text-decoration:none; }
+  .wrap { max-width:1180px; margin:0 auto; padding:0 24px; }
+  nav { display:flex; align-items:center; justify-content:space-between; height:72px; }
+  .logo { display:flex; gap:10px; align-items:center; font-weight:800; letter-spacing:.2em; font-size:15px; }
+  .logo i { width:28px; height:28px; border-radius:8px; background:linear-gradient(135deg,var(--green),#0ea5e9); display:block; }
+  .links { display:flex; gap:28px; color:var(--muted); font-size:14px; }
+  .btn { display:inline-flex; align-items:center; gap:8px; padding:11px 18px; border-radius:10px; font-weight:600; font-size:14px; }
+  .btn-g { background:var(--green); color:#04130a; }
+  .btn-o { border:1px solid var(--line); color:var(--text); }
+  .glow { position:absolute; inset:-200px 0 auto 0; height:700px; background:radial-gradient(600px 300px at 50% 30%, rgba(61,220,132,.22), transparent 70%); pointer-events:none; }
+  .grid-bg { position:absolute; inset:0; background-image:linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size:56px 56px; mask-image:radial-gradient(ellipse at 50% 20%, #000 20%, transparent 70%); opacity:.5; pointer-events:none; }
+  header { position:relative; text-align:center; padding:90px 0 40px; }
+  .pill { display:inline-flex; gap:8px; align-items:center; border:1px solid var(--line); background:rgba(255,255,255,.03); padding:6px 12px; border-radius:999px; font-size:13px; color:var(--muted); }
+  .pill b { color:var(--green); font-weight:600; }
+  h1 { font-size:clamp(40px,6.4vw,76px); line-height:1.02; letter-spacing:-.035em; font-weight:800; margin:24px auto 0; max-width:900px; }
+  h1 span { background:linear-gradient(90deg,var(--green),#7dd3fc); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .sub { color:var(--muted); font-size:18px; max-width:620px; margin:22px auto 0; line-height:1.6; }
+  .prompt { position:relative; max-width:720px; margin:40px auto 0; background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px 18px 14px; text-align:left; box-shadow:0 30px 80px -20px rgba(61,220,132,.25); }
+  .prompt .q { font-size:18px; min-height:28px; }
+  .prompt .q::after { content:"▍"; color:var(--green); animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+  .prompt .row { display:flex; justify-content:space-between; align-items:center; margin-top:16px; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; }
+  .chip { font-size:12px; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:5px 10px; }
+  .result { max-width:960px; margin:56px auto 0; border:1px solid var(--line); border-radius:18px; background:var(--panel); overflow:hidden; text-align:left; }
+  .result .bar { display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--line); font-size:14px; }
+  .live { display:flex; gap:8px; align-items:center; color:var(--green); font-family:'JetBrains Mono'; font-size:12px; }
+  .live i { width:8px; height:8px; border-radius:50%; background:var(--green); box-shadow:0 0 12px var(--green); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th { text-align:left; color:var(--muted); font-weight:500; font-size:12px; padding:10px 18px; border-bottom:1px solid var(--line); }
+  td { padding:13px 18px; border-bottom:1px solid var(--line); }
+  td.src { font-family:'JetBrains Mono'; font-size:12px; color:#7dd3fc; }
+  .conf { display:inline-block; width:60px; height:5px; border-radius:9px; background:var(--line); vertical-align:middle; margin-right:8px; overflow:hidden; }
+  .conf i { display:block; height:100%; background:var(--green); }
+  tr:last-child td { border-bottom:0; }
+  .sources { text-align:center; margin:70px 0 0; color:var(--muted); font-size:13px; }
+  .sources div { display:flex; justify-content:center; gap:44px; margin-top:18px; font-weight:700; font-size:18px; color:#56605e; flex-wrap:wrap; }
+  .feat { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin:90px 0; }
+  .card { border:1px solid var(--line); border-radius:16px; padding:26px; background:linear-gradient(180deg,rgba(255,255,255,.03),transparent); }
+  .card .n { font-family:'JetBrains Mono'; color:var(--green); font-size:12px; }
+  .card h3 { margin:14px 0 8px; font-size:19px; }
+  .card p { color:var(--muted); line-height:1.6; font-size:14px; }
+  .tag { position:fixed; bottom:16px; right:16px; background:#fff; color:#000; padding:8px 12px; border-radius:8px; font-size:12px; font-weight:700; }
+  @media (max-width:760px) { .links { display:none; } .feat { grid-template-columns:1fr; } th:nth-child(3),td:nth-child(3){display:none;} }
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<div class="wrap">
+  <nav>
+    <a class="logo" href="#"><i></i>LUKA</a>
+    <div class="links"><a href="#">Fonctionnement</a><a href="#">Exemples</a><a href="#">Tarifs</a></div>
+    <div style="display:flex;gap:10px"><a class="btn btn-o" href="#">Connexion</a><a class="btn btn-g" href="#">Essayer gratuitement</a></div>
+  </nav>
+  <header>
+    <div class="grid-bg"></div>
+    <span class="pill"><b>Nouveau</b> Chaque ligne arrive avec sa source</span>
+    <h1>Pose une question.<br /><span>Reçois un tableau.</span></h1>
+    <p class="sub">Luka cherche sur le web, lit les pages et transforme ta demande en données propres, vérifiables et prêtes pour Excel.</p>
+    <div class="prompt">
+      <div class="q" id="q"></div>
+      <div class="row">
+        <div class="chips"><span class="chip">🇨🇬 Congo</span><span class="chip">20 lignes</span><span class="chip">4 colonnes</span></div>
+        <a class="btn btn-g" href="#">Collecter →</a>
+      </div>
+    </div>
+    <div class="result">
+      <div class="bar"><b>Arrondissements de Brazzaville</b><span class="live"><i></i>9 lignes · 3 sources</span></div>
+      <table>
+        <tr><th>Arrondissement</th><th>N°</th><th>Source</th><th>Confiance</th></tr>
+        <tr><td>Makélékélé</td><td>1</td><td class="src">fr.vikidia.org</td><td><span class="conf"><i style="width:94%"></i></span>94%</td></tr>
+        <tr><td>Bacongo</td><td>2</td><td class="src">fr.vikidia.org</td><td><span class="conf"><i style="width:92%"></i></span>92%</td></tr>
+        <tr><td>Poto-Poto</td><td>3</td><td class="src">wikipedia.org</td><td><span class="conf"><i style="width:90%"></i></span>90%</td></tr>
+        <tr><td>Moungali</td><td>4</td><td class="src">wikipedia.org</td><td><span class="conf"><i style="width:88%"></i></span>88%</td></tr>
+      </table>
+    </div>
+  </header>
+  <div class="sources">Luka lit des sources publiques comme<div><span>Wikipedia</span><span>OpenStreetMap</span><span>Sites officiels</span><span>Presse</span></div></div>
+  <section class="feat">
+    <div class="card"><span class="n">01 — DÉCRIS</span><h3>En français, comme tu parles</h3><p>« Les hôpitaux de Pointe-Noire avec leur téléphone ». Luka propose les colonnes.</p></div>
+    <div class="card"><span class="n">02 — VÉRIFIE</span><h3>Chaque ligne a sa source</h3><p>Un clic pour valider, corriger ou rejeter. Rien n'est inventé sans être signalé.</p></div>
+    <div class="card"><span class="n">03 — EXPORTE</span><h3>CSV, Excel, JSON</h3><p>Tes données sont prêtes pour ton projet, ton rapport ou ta base de données.</p></div>
+  </section>
+</div>
+<span class="tag">Proposition A · Sombre et premium</span>
+<script>
+  const qs = ["Les arrondissements de Brazzaville avec leur maire", "Les meilleurs restaurants de Pointe-Noire", "Les universités du Cameroun et leur ville"];
+  let i = 0, j = 0, del = false; const el = document.getElementById("q");
+  (function tick() {
+    const s = qs[i]; el.textContent = s.slice(0, j);
+    if (!del && j < s.length) j++; else if (!del) { del = true; return setTimeout(tick, 1600); }
+    else if (j > 0) j--; else { del = false; i = (i + 1) % qs.length; }
+    setTimeout(tick, del ? 25 : 55);
+  })();
+</script>
+</body>
+</html>

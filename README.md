@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Luka
 
-## Getting Started
+> *luka* : « chercher », en lingala.
 
-First, run the development server:
+Luka est une plateforme de collecte de données. Tu décris en français ce que tu cherches
+(« les arrondissements de Brazzaville avec leur maire », « les villes du Cameroun »…),
+Luka propose les colonnes du tableau, cherche sur le web, extrait les données avec une IA
+et te les présente **avec la source de chaque ligne**. Tu vérifies, puis tu exportes.
+
+## Fonctionnalités (MVP)
+
+- Comptes : email et mot de passe, Google (facultatif), captcha Cloudflare Turnstile (facultatif)
+- Collecte décrite en langage naturel, avec des colonnes suggérées par l'IA et modifiables
+- Recherche web (Tavily) → lecture des pages → extraction selon le schéma, sans rien inventer
+- Sans clé de recherche web : réponse tirée des connaissances du modèle, signalée « à vérifier » et à confiance plafonnée
+- Fusion des doublons, conversion des nombres, niveau de confiance par ligne
+- Vérification ligne par ligne (valider / rejeter) et correction des cases (double-clic)
+- Export CSV (compatible Excel en français) et JSON
+- Notifications dans l'application
+- Garde-fous : quota de collectes par jour et par utilisateur, une collecte à la fois,
+  plafond global d'appels IA par jour, limite de tentatives de connexion par IP,
+  journal de chaque appel IA (`llm_usage`)
+
+## Démarrer en local
+
+Prérequis : Node.js ≥ 22 et Docker.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local      # puis remplir les clés (voir ci-dessous)
+npm run db:up                   # PostgreSQL local (port 5544)
+npm run db:push                 # crée les tables
+npm run dev                     # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Clés à obtenir (offres gratuites)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Variable | Où l'obtenir |
+|---|---|
+| `LLM_API_KEY` | https://console.groq.com → API Keys (ou OpenRouter, Cerebras…) |
+| `TAVILY_API_KEY` | https://tavily.com → Dashboard |
+| `GOOGLE_CLIENT_ID/SECRET` | Google Cloud Console → Identifiants OAuth (facultatif) |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare → Turnstile (facultatif) |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Pour changer de fournisseur d'IA, il suffit de modifier `LLM_BASE_URL`, `LLM_MODEL` et
+`LLM_API_KEY` : toute API compatible OpenAI fonctionne (Groq, OpenRouter, Cerebras,
+Mistral, Ollama…).
 
-## Learn More
+## Déployer (Vercel + Supabase)
 
-To learn more about Next.js, take a look at the following resources:
+1. Crée un projet Supabase et copie l'URL de connexion **Session pooler** dans `DATABASE_URL`.
+2. Applique le schéma : `DATABASE_URL=… npm run db:migrate` (fichiers dans `drizzle/`).
+3. Importe le dépôt dans Vercel, ajoute les variables d'environnement et mets
+   `BETTER_AUTH_URL` à l'URL publique du site.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Architecture
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/
+  app/                    pages (accueil, connexion, tableau de bord, collectes) et routes API
+  components/             interface (formulaire de collecte, tableau de résultats, notifications…)
+  db/schema.ts            tables : user/session/account/verification, collectes, rows, llm_usage, notifications
+  lib/engine.ts           moteur : planifier les recherches → chercher → extraire → fusionner
+  lib/llm.ts              client IA compatible OpenAI (réessais automatiques sur 429)
+  lib/connectors/         sources de données (Tavily pour l'instant)
+  lib/quotas.ts           limites et garde-fous
+  lib/config.ts           paramètres lus depuis l'environnement
+```
 
-## Deploy on Vercel
+**Ajouter une source** (Wikidata, OpenStreetMap, fichiers PDF/Excel…) : créer un connecteur
+qui respecte l'interface `Connector` de `src/lib/connectors/types.ts`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Feuille de route
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **V2** : formule premium avec un modèle plus puissant (recherche approfondie), système de crédits, suivi des coûts,
+  connecteurs Wikidata et OpenStreetMap, carte, export Excel
+- **V3** : paiement Mobile Money (MTN / Airtel), modèles de collecte réutilisables, tableau de bord
+  administrateur, envoi vers une base externe ou un webhook, collectes planifiées
+
+> Les collectes tournent en arrière-plan grâce à `after()` de Next.js (5 minutes maximum).
+> Pour des collectes plus longues, il faudra une vraie file de tâches (Inngest, Trigger.dev…).

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Luka — Proposition C · Clair et coloré</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root { --ink:#0d1b2a; --muted:#5b6b7c; --line:#e6ebf1; --violet:#6d4aff; --mint:#22c55e; --sky:#38bdf8; --peach:#ffb4a2; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:#fff; color:var(--ink); font-family:'Plus Jakarta Sans', sans-serif; overflow-x:hidden; }
+  a { color:inherit; text-decoration:none; }
+  .wrap { max-width:1160px; margin:0 auto; padding:0 24px; }
+  .blobs { position:absolute; inset:0 0 auto 0; height:760px; overflow:hidden; pointer-events:none; }
+  .blobs i { position:absolute; border-radius:50%; filter:blur(80px); opacity:.55; }
+  .blobs i:nth-child(1) { width:520px; height:520px; background:var(--violet); left:-120px; top:-160px; opacity:.35; }
+  .blobs i:nth-child(2) { width:460px; height:460px; background:var(--sky); right:-100px; top:-60px; }
+  .blobs i:nth-child(3) { width:380px; height:380px; background:var(--peach); left:40%; top:260px; }
+  nav { position:relative; display:flex; align-items:center; justify-content:space-between; height:76px; }
+  .logo { display:flex; align-items:center; gap:10px; font-weight:800; font-size:22px; }
+  .logo i { width:34px; height:34px; border-radius:11px; background:conic-gradient(from 200deg, var(--violet), var(--sky), var(--mint), var(--violet)); display:grid; place-items:center; color:#fff; font-style:normal; font-size:16px; }
+  .links { display:flex; gap:6px; background:rgba(255,255,255,.7); border:1px solid var(--line); border-radius:999px; padding:5px; backdrop-filter:blur(10px); }
+  .links a { padding:8px 16px; border-radius:999px; font-size:14px; font-weight:500; color:var(--muted); }
+  .links a:first-child { background:var(--ink); color:#fff; }
+  .btn { display:inline-flex; align-items:center; gap:8px; padding:12px 20px; border-radius:12px; font-weight:700; font-size:15px; }
+  .btn-v { background:var(--violet); color:#fff; box-shadow:0 10px 30px -8px rgba(109,74,255,.6); }
+  .btn-w { background:#fff; border:1px solid var(--line); }
+  header { position:relative; text-align:center; padding:80px 0 0; }
+  .badge { display:inline-flex; gap:8px; align-items:center; background:#fff; border:1px solid var(--line); border-radius:999px; padding:6px 14px 6px 6px; font-size:13px; font-weight:600; box-shadow:0 4px 14px -6px rgba(13,27,42,.15); }
+  .badge b { background:var(--mint); color:#fff; border-radius:999px; padding:3px 9px; font-size:11px; }
+  h1 { font-size:clamp(40px,6vw,72px); line-height:1.04; letter-spacing:-.04em; font-weight:800; max-width:880px; margin:26px auto 0; }
+  h1 .hl { position:relative; white-space:nowrap; }
+  h1 .hl::after { content:""; position:absolute; left:-4px; right:-4px; bottom:6px; height:18px; background:#c9f7d8; z-index:-1; border-radius:6px; }
+  .sub { font-size:19px; color:var(--muted); max-width:600px; margin:22px auto 0; line-height:1.6; }
+  .cta { display:flex; justify-content:center; gap:12px; margin-top:34px; flex-wrap:wrap; }
+  .shot { position:relative; max-width:1040px; margin:70px auto 0; border-radius:22px; padding:10px; background:linear-gradient(135deg,rgba(109,74,255,.25),rgba(56,189,248,.25)); }
+  .app { background:#fff; border-radius:14px; overflow:hidden; border:1px solid var(--line); display:grid; grid-template-columns:200px 1fr; min-height:400px; text-align:left; }
+  .side { background:#f8fafc; border-right:1px solid var(--line); padding:18px 14px; font-size:13px; }
+  .side div { padding:8px 10px; border-radius:8px; color:var(--muted); margin-bottom:2px; }
+  .side .on { background:var(--violet); color:#fff; font-weight:600; }
+  .main { padding:22px; }
+  .kpis { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .kpi { border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .kpi small { color:var(--muted); font-size:12px; }
+  .kpi b { display:block; font-size:24px; margin-top:4px; }
+  .kpi:nth-child(1) { background:#f3efff; border-color:#e2d9ff; } .kpi:nth-child(2) { background:#ecfdf3; border-color:#c9f2da; } .kpi:nth-child(3) { background:#eef9ff; border-color:#cdeefd; }
+  table { width:100%; border-collapse:collapse; margin-top:16px; font-size:13px; }
+  th { text-align:left; color:var(--muted); font-weight:600; padding:9px 10px; background:#f8fafc; }
+  td { padding:11px 10px; border-top:1px solid var(--line); }
+  .st { font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; }
+  .st.ok { background:#dcfce7; color:#15803d; } .st.wait { background:#fef3c7; color:#a16207; }
+  .float { position:absolute; background:#fff; border:1px solid var(--line); border-radius:14px; padding:12px 14px; font-size:13px; font-weight:600; box-shadow:0 20px 40px -14px rgba(13,27,42,.25); display:flex; gap:10px; align-items:center; }
+  .float.f1 { left:-30px; top:120px; } .float.f2 { right:-24px; bottom:60px; }
+  .dot { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; color:#fff; }
+  .logos { text-align:center; padding:80px 0 100px; color:var(--muted); font-size:14px; }
+  .uses { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:18px; }
+  .uses span { border:1px solid var(--line); border-radius:999px; padding:10px 18px; font-weight:600; color:var(--ink); font-size:14px; }
+  .tag { position:fixed; bottom:16px; right:16px; background:var(--ink); color:#fff; padding:8px 12px; border-radius:8px; font-size:12px; font-weight:700; }
+  @media (max-width:820px) { .links{display:none} .app{grid-template-columns:1fr} .side{display:none} .float{display:none} }
+</style>
+</head>
+<body>
+<div class="blobs"><i></i><i></i><i></i></div>
+<div class="wrap">
+  <nav>
+    <a class="logo" href="#"><i>L</i>Luka</a>
+    <div class="links"><a href="#">Accueil</a><a href="#">Exemples</a><a href="#">Tarifs</a><a href="#">Aide</a></div>
+    <a class="btn btn-w" href="#">Connexion</a>
+  </nav>
+  <header>
+    <span class="badge"><b>Gratuit</b> 3 collectes par jour, sans carte bancaire</span>
+    <h1>Collecte des données sur <span class="hl">n'importe quel sujet</span> en quelques minutes</h1>
+    <p class="sub">Tu écris ta demande, Luka cherche sur le web et te livre un tableau propre, avec la source de chaque ligne.</p>
+    <div class="cta"><a class="btn btn-v" href="#">Commencer gratuitement →</a><a class="btn btn-w" href="#">▶ Voir la démo</a></div>
+    <div class="shot">
+      <div class="float f1"><span class="dot" style="background:var(--mint)">✓</span>9 lignes trouvées</div>
+      <div class="float f2"><span class="dot" style="background:var(--violet)">↓</span>Export Excel prêt</div>
+      <div class="app">
+        <div class="side"><div class="on">Mes collectes</div><div>Nouvelle collecte</div><div>Lieux à visiter</div><div>Administrations</div><div>Entreprises</div></div>
+        <div class="main">
+          <div class="kpis"><div class="kpi"><small>Collectes</small><b>12</b></div><div class="kpi"><small>Lignes trouvées</small><b>248</b></div><div class="kpi"><small>Validées</small><b>196</b></div></div>
+          <table>
+            <tr><th>Collecte</th><th>Lignes</th><th>Statut</th></tr>
+            <tr><td>Arrondissements de Brazzaville</td><td>9</td><td><span class="st ok">Terminée</span></td></tr>
+            <tr><td>Hôtels de Pointe-Noire</td><td>18</td><td><span class="st ok">Terminée</span></td></tr>
+            <tr><td>Universités du Cameroun</td><td>—</td><td><span class="st wait">En cours</span></td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </header>
+  <div class="logos">Utilisé pour collecter
+    <div class="uses"><span>🏛️ Mairies</span><span>🏥 Hôpitaux</span><span>🎓 Écoles</span><span>🏝️ Tourisme</span><span>🏢 Entreprises</span><span>📅 Événements</span></div>
+  </div>
+</div>
+<span class="tag">Proposition C · Clair et coloré</span>
+</body>
+</html>

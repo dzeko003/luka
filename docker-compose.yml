@@ -1,0 +1,14 @@
+# Base PostgreSQL locale pour le développement (en production : Supabase).
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: luka
+      POSTGRES_PASSWORD: luka
+      POSTGRES_DB: luka
+    ports:
+      - "5544:5432"
+    volumes:
+      - luka-db:/var/lib/postgresql/data
+volumes:
+  luka-db:
