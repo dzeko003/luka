@@ -10,6 +10,7 @@ import { tavilyConnector } from "./connectors/tavily";
 import { readWebsiteContacts, type WebsiteContacts } from "./connectors/website";
 import type { SourceDocument } from "./connectors/types";
 import { chatJson } from "./llm";
+import { collecteMail, sendMail } from "./mailer";
 import { notify } from "./notifications";
 
 type Value = string | number | boolean | null;
@@ -579,6 +580,25 @@ function mergeInto(dup: ExtractedRow, row: ExtractedRow) {
 
 type CollecteRecord = typeof schema.collectes.$inferSelect;
 
+/** Au-delà de cette durée (file d'attente comprise), l'utilisateur a sans doute quitté la page : on le prévient par e-mail. */
+const MAIL_AFTER_MS = 2 * 60_000;
+
+/** E-mail de fin de collecte ; une erreur d'envoi n'affecte jamais la collecte. */
+async function mailCollecteEnd(c: CollecteRecord, outcome: { rows?: number; error?: string }) {
+  if (Date.now() - c.createdAt.getTime() < MAIL_AFTER_MS) return;
+  try {
+    const [u] = await db
+      .select({ email: schema.user.email, name: schema.user.name })
+      .from(schema.user)
+      .where(eq(schema.user.id, c.userId));
+    if (!u) return;
+    const base = (process.env.BETTER_AUTH_URL || "http://localhost:3000").replace(/\/$/, "");
+    await sendMail({ to: u.email, ...collecteMail(u.name, `${base}/collectes/${c.id}`, { title: c.title, ...outcome }) });
+  } catch (e) {
+    console.error(`[mail] échec de l'e-mail de fin de collecte : ${(e as Error).message}`);
+  }
+}
+
 async function addLog(id: string, message: string, level: LogEntry["level"] = "info") {
   const entry: LogEntry = { at: new Date().toISOString(), message, level };
   await db
@@ -724,6 +744,7 @@ export async function runCollecte(collecteId: string) {
       body: `${finalRows.length} ligne(s) trouvée(s), à vérifier.`,
       href: `/collectes/${c.id}`,
     });
+    await mailCollecteEnd(c, { rows: finalRows.length });
   } catch (e) {
     const message = (e as Error).message || "Erreur inconnue";
     await addLog(c.id, message, "error");
@@ -736,5 +757,6 @@ export async function runCollecte(collecteId: string) {
       body: message,
       href: `/collectes/${c.id}`,
     });
+    await mailCollecteEnd(c, { error: message });
   }
 }

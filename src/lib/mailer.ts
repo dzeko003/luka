@@ -38,12 +38,12 @@ export async function sendMail(mail: { to: string; subject: string; html: string
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-/** Gabarit commun : salutation, message, bouton, durée de validité du lien. */
-function layout(o: { name: string; intro: string; button: string; url: string; validity: string; ignore: string; subject: string }) {
+/** Gabarit commun : salutation, message, bouton, durée de validité du lien (facultative), note finale. */
+function layout(o: { name: string; intro: string; button: string; url: string; validity?: string; ignore: string; subject: string }) {
   const first = o.name.trim().split(/\s+/)[0] || "";
   const hello = first ? `Bonjour ${first},` : "Bonjour,";
   const text =
-    `${hello}\n\n${o.intro} Ouvre ce lien (valable ${o.validity}) :\n${o.url}\n\n${o.ignore}\n\nL'équipe Luka`;
+    `${hello}\n\n${o.intro} Ouvre ce lien${o.validity ? ` (valable ${o.validity})` : ""} :\n${o.url}\n\n${o.ignore}\n\nL'équipe Luka`;
   const url = escapeHtml(o.url);
   const html = `<!doctype html>
 <html lang="fr"><body style="margin:0;background:#f4f4f7;font-family:Arial,Helvetica,sans-serif;color:#14112b">
@@ -55,7 +55,7 @@ function layout(o: { name: string; intro: string; button: string; url: string; v
           <p style="margin:0 0 12px">${escapeHtml(hello)}</p>
           <p style="margin:0 0 24px">${escapeHtml(o.intro)}</p>
           <a href="${url}" style="display:inline-block;background:#5b3df5;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px">${escapeHtml(o.button)}</a>
-          <p style="margin:24px 0 0;font-size:13px;color:#8b889b">Le lien est valable ${escapeHtml(o.validity)}. Si le bouton ne marche pas, copie ce lien dans ton navigateur :<br>
+          <p style="margin:24px 0 0;font-size:13px;color:#8b889b">${o.validity ? `Le lien est valable ${escapeHtml(o.validity)}. ` : ""}Si le bouton ne marche pas, copie ce lien dans ton navigateur :<br>
             <a href="${url}" style="color:#5b3df5;word-break:break-all">${url}</a></p>
           <p style="margin:16px 0 0;font-size:13px;color:#8b889b">${escapeHtml(o.ignore)}</p>
         </td></tr>
@@ -89,5 +89,20 @@ export function resetPasswordMail(name: string, url: string) {
     button: "Choisir un nouveau mot de passe",
     validity: "1 heure",
     ignore: "Si tu n'as rien demandé, ignore cet e-mail : ton mot de passe actuel reste valable.",
+  });
+}
+
+/** E-mail de fin de collecte (réussie ou en échec). */
+export function collecteMail(name: string, url: string, c: { title: string; rows?: number; error?: string }) {
+  const done = c.error === undefined;
+  return layout({
+    name,
+    url,
+    subject: done ? `Ta collecte est prête : ${c.title}` : `Échec de ta collecte : ${c.title}`,
+    intro: done
+      ? `Ta collecte « ${c.title} » est terminée : ${c.rows ?? 0} ligne(s) trouvée(s), à vérifier avant de les exporter.`
+      : `Ta collecte « ${c.title} » n'a pas pu aboutir (${c.error}). Tu peux en lancer une nouvelle depuis Luka.`,
+    button: done ? "Voir les résultats" : "Ouvrir la collecte",
+    ignore: "Tu reçois cet e-mail parce que ta collecte a duré plus de quelques minutes.",
   });
 }
