@@ -8,14 +8,25 @@ declare global {
     turnstile?: {
       render: (el: HTMLElement, opts: { sitekey: string; callback: (t: string) => void; "expired-callback": () => void }) => string;
       remove: (id: string) => void;
+      reset: (id: string) => void;
     };
   }
 }
 
 export const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
 
-/** Captcha Cloudflare Turnstile — affiché seulement si la clé publique est configurée. */
-export function Turnstile({ onToken }: { onToken: (token: string | null) => void }) {
+/** Message en français pour les refus du captcha renvoyés par le serveur, sinon null. */
+export function captchaErrorMessage(code?: string) {
+  if (code === "MISSING_RESPONSE") return "Valide le captcha avant de continuer.";
+  if (code === "VERIFICATION_FAILED" || code === "UNKNOWN_ERROR") return "La vérification anti-robot a échoué. Réessaie.";
+  return null;
+}
+
+/**
+ * Captcha Cloudflare Turnstile — affiché seulement si la clé publique est configurée.
+ * Un jeton ne sert qu'une fois : incrémenter `resetSignal` après chaque envoi pour en obtenir un nouveau.
+ */
+export function Turnstile({ onToken, resetSignal = 0 }: { onToken: (token: string | null) => void; resetSignal?: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
 
@@ -36,6 +47,13 @@ export function Turnstile({ onToken }: { onToken: (token: string | null) => void
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!resetSignal || !widgetId.current) return;
+    onToken(null);
+    window.turnstile?.reset(widgetId.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetSignal]);
 
   if (!turnstileSiteKey) return null;
   return (
