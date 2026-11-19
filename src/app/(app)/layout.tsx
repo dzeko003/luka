@@ -8,7 +8,7 @@ async function Shell({ children }: { children: React.ReactNode }) {
   const quota = await checkCollecteQuota(user);
   return (
     <AppFrame
-      user={{ name: user.name, email: user.email, premium: user.plan === "premium" }}
+      user={{ name: user.name, email: user.email, premium: user.plan === "premium", admin: user.role === "admin" }}
       quota={{ used: quota.usedToday, limit: quota.limitPerDay, premium: user.plan === "premium" }}
     >
       {children}

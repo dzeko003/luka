@@ -119,9 +119,11 @@ export function AuthForm({
           ? "Email ou mot de passe incorrect."
           : error.code === "USER_ALREADY_EXISTS" || error.code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"
             ? "Un compte existe déjà avec cet email."
-            : error.status === 429
-              ? "Trop de tentatives. Réessaie dans une minute."
-              : (captchaErrorMessage(error.code) ?? error.message ?? "Une erreur est survenue."),
+            : error.code === "ACCOUNT_BLOCKED"
+              ? "Ton compte est suspendu. Contacte l'administrateur."
+              : error.status === 429
+                ? "Trop de tentatives. Réessaie dans une minute."
+                : (captchaErrorMessage(error.code) ?? error.message ?? "Une erreur est survenue."),
       );
       return;
     }

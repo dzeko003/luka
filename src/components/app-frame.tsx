@@ -17,6 +17,7 @@ import {
   Menu,
   Plus,
   Search,
+  ShieldCheck,
   Store,
   UserRound,
   X,
@@ -41,7 +42,7 @@ const ICONS: Record<Template["icon"], typeof MapPin> = {
 };
 
 type Props = {
-  user: { name: string; email: string; premium?: boolean };
+  user: { name: string; email: string; premium?: boolean; admin?: boolean };
   quota: { used: number; limit: number; premium?: boolean };
   children: React.ReactNode;
 };
@@ -203,6 +204,11 @@ function Sidebar({ user, quota, onNavigate }: Omit<Props, "children"> & { onNavi
       </nav>
 
       <div className="p-2.5">
+        {user.admin && (
+          <Link href="/admin" onClick={onNavigate} className={`${navItem} ${pathname === "/admin" ? active : ""}`}>
+            <ShieldCheck className="size-4" /> Administration
+          </Link>
+        )}
         <Link href="/premium" onClick={onNavigate} className={`${navItem} ${pathname === "/premium" ? active : ""}`}>
           <LifeBuoy className="size-4" /> Aide et formules
         </Link>
