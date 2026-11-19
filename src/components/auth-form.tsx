@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
-import { Turnstile, turnstileSiteKey } from "./turnstile";
+import { captchaErrorMessage, Turnstile, turnstileSiteKey } from "./turnstile";
 
 const input =
   "h-12 w-full rounded-xl border border-(--line) bg-white px-4 text-[15px] text-(--ink) outline-none transition placeholder:text-[#a3a6b1] focus:border-(--violet) focus:ring-4 focus:ring-[#5e0aff]/10";
@@ -65,6 +65,7 @@ export function AuthForm({
   const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/tableau-de-bord";
   const [loading, setLoading] = useState(false);
   const [captcha, setCaptcha] = useState<string | null>(null);
+  const [captchaReset, setCaptchaReset] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
   const isSignUp = mode === "inscription";
   // Garde la demande tapée sur l'accueil quand on passe d'un écran à l'autre
@@ -103,6 +104,8 @@ export function AuthForm({
       ? await authClient.signUp.email({ name: String(form.get("name")), email, password, callbackURL: verifyCallback, fetchOptions })
       : await authClient.signIn.email({ email, password, callbackURL: verifyCallback, fetchOptions });
     setLoading(false);
+    // Le jeton du captcha vient d'être consommé : nouveau jeton pour la prochaine tentative
+    if (captcha) setCaptchaReset((n) => n + 1);
 
     if (error?.code === "EMAIL_NOT_VERIFIED") {
       // Le serveur vient de renvoyer un lien d'activation
@@ -118,7 +121,7 @@ export function AuthForm({
             ? "Un compte existe déjà avec cet email."
             : error.status === 429
               ? "Trop de tentatives. Réessaie dans une minute."
-              : (error.message ?? "Une erreur est survenue."),
+              : (captchaErrorMessage(error.code) ?? error.message ?? "Une erreur est survenue."),
       );
       return;
     }
@@ -284,7 +287,7 @@ export function AuthForm({
             </button>
           </div>
         </div>
-        <Turnstile onToken={setCaptcha} />
+        <Turnstile onToken={setCaptcha} resetSignal={captchaReset} />
         {error && (
           <p className="rounded-xl bg-[#fdecec] px-4 py-3 text-[14px] text-[#b42318]" role="alert">
             {error}

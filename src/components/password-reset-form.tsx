@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
-import { Turnstile, turnstileSiteKey } from "./turnstile";
+import { captchaErrorMessage, Turnstile, turnstileSiteKey } from "./turnstile";
 
 const input =
   "h-12 w-full rounded-xl border border-(--line) bg-white px-4 text-[15px] text-(--ink) outline-none transition placeholder:text-[#a3a6b1] focus:border-(--violet) focus:ring-4 focus:ring-[#5e0aff]/10";
@@ -32,6 +32,7 @@ export function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [captcha, setCaptcha] = useState<string | null>(null);
+  const [captchaReset, setCaptchaReset] = useState(0);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -45,8 +46,13 @@ export function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) 
       fetchOptions: captcha ? { headers: { "x-captcha-response": captcha } } : undefined,
     });
     setLoading(false);
+    if (captcha) setCaptchaReset((n) => n + 1);
     if (error) {
-      return setError(error.status === 429 ? "Trop de demandes. Réessaie dans une minute." : "L'envoi a échoué. Réessaie dans un instant.");
+      return setError(
+        error.status === 429
+          ? "Trop de demandes. Réessaie dans une minute."
+          : (captchaErrorMessage(error.code) ?? "L'envoi a échoué. Réessaie dans un instant."),
+      );
     }
     // Même réponse que l'adresse existe ou non : on ne révèle pas qui a un compte
     setSentTo(email);
@@ -90,7 +96,7 @@ export function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) 
             placeholder="nom@exemple.com"
           />
         </div>
-        <Turnstile onToken={setCaptcha} />
+        <Turnstile onToken={setCaptcha} resetSignal={captchaReset} />
         {error && (
           <p className={alert} role="alert">
             {error}
