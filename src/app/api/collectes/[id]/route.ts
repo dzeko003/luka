@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { apiUser, getOwnedCollecte, jsonError } from "@/lib/api";
 
@@ -26,7 +26,8 @@ export async function GET(_req: Request, { params }: Ctx) {
     const [q] = await db
       .select({ n: sql<number>`count(*)`.mapWith(Number) })
       .from(schema.collectes)
-      .where(sql`${schema.collectes.status} = 'pending' and ${schema.collectes.createdAt} < ${c.createdAt}`);
+      // lt() convertit la date pour le pilote postgres (une Date brute dans sql`` le fait planter)
+      .where(and(eq(schema.collectes.status, "pending"), lt(schema.collectes.createdAt, c.createdAt)));
     queuePosition = q.n + 1;
   }
   return Response.json({ collecte: c, counts, queuePosition });
