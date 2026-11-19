@@ -5,6 +5,9 @@ import { captcha } from "better-auth/plugins";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db, schema } from "@/db";
+import { mailEnabled, sendMail, verificationMail } from "./mailer";
+
+const requireVerification = mailEnabled || process.env.NODE_ENV !== "production";
 
 const plugins = [];
 if (process.env.TURNSTILE_SECRET_KEY) {
@@ -28,7 +31,26 @@ export const auth = betterAuth({
       verification: schema.verification,
     },
   }),
-  emailAndPassword: { enabled: true, minPasswordLength: 8 },
+  emailAndPassword: {
+    enabled: true,
+    minPasswordLength: 8,
+    // Compte activé par le lien reçu par e-mail. Sans SMTP en production, l'activation est désactivée
+    // pour ne pas bloquer les inscriptions ; en développement, le lien s'affiche dans la console.
+    requireEmailVerification: requireVerification,
+  },
+  emailVerification: {
+    sendOnSignUp: requireVerification,
+    // Une tentative de connexion d'un compte non activé renvoie un nouveau lien
+    sendOnSignIn: requireVerification,
+    autoSignInAfterVerification: true,
+    expiresIn: 60 * 60 * 24,
+    sendVerificationEmail: async ({ user, url }) => {
+      // Sans attendre l'envoi : la réponse ne doit pas révéler si l'adresse existe
+      void sendMail({ to: user.email, ...verificationMail(user.name, url) }).catch((e) =>
+        console.error(`[mail] échec de l'e-mail d'activation : ${(e as Error).message}`),
+      );
+    },
+  },
   socialProviders:
     process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
       ? {

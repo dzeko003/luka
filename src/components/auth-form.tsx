@@ -1,9 +1,9 @@
 "use client";
 
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, MailCheck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { Turnstile, turnstileSiteKey } from "./turnstile";
 
@@ -22,8 +22,13 @@ function GoogleIcon() {
   );
 }
 
-function googleErrorMessage(code: string) {
+/** Message pour le code d'erreur renvoyé dans l'URL (connexion Google ou lien d'activation). */
+function authErrorMessage(code: string) {
   const c = code.toLowerCase();
+  if (c === "token_expired" || c === "invalid_token") {
+    return "Ce lien d'activation a expiré ou a déjà servi. Connecte-toi : on t'enverra un nouveau lien si ton compte n'est pas encore activé.";
+  }
+  if (c === "user_not_found") return "Aucun compte ne correspond à ce lien d'activation. Crée ton compte à nouveau.";
   if (c.includes("access_denied")) return "Connexion avec Google annulée.";
   if (c.includes("link") || c.includes("email_doesn")) {
     return "Ce compte Google n'a pas pu être relié à un compte existant. Connecte-toi avec ton email et ton mot de passe.";
@@ -37,18 +42,22 @@ export function AuthForm({
   googleEnabled,
   defaultEmail,
   next = "/tableau-de-bord",
-  googleError,
+  authError,
 }: {
   mode: "connexion" | "inscription";
   googleEnabled: boolean;
   defaultEmail?: string;
   /** Page où aller après la connexion (chemin interne uniquement). */
   next?: string;
-  /** Code d'erreur renvoyé après un échec de connexion Google (paramètre « error »). */
-  googleError?: string;
+  /** Code d'erreur reçu dans l'URL (paramètre « error ») : connexion Google ou lien d'activation. */
+  authError?: string;
 }) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(googleError ? googleErrorMessage(googleError) : null);
+  const [error, setError] = useState<string | null>(authError ? authErrorMessage(authError) : null);
+  // Adresse en attente d'activation : on affiche « vérifie ta boîte mail » à la place du formulaire
+  const [pending, setPending] = useState<{ email: string; reason: "signup" | "signin" } | null>(null);
+  const [cooldown, setCooldown] = useState(0);
+  const [resent, setResent] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/tableau-de-bord";
   const [loading, setLoading] = useState(false);
@@ -56,7 +65,26 @@ export function AuthForm({
   const [showPassword, setShowPassword] = useState(false);
   const isSignUp = mode === "inscription";
   // Garde la demande tapée sur l'accueil quand on passe d'un écran à l'autre
-  const switchHref = `${isSignUp ? "/connexion" : "/inscription"}${next.startsWith("/collectes/nouvelle?") ? next.slice("/collectes/nouvelle".length) : ""}`;
+  const keptQuery = next.startsWith("/collectes/nouvelle?") ? next.slice("/collectes/nouvelle".length) : "";
+  const switchHref = `${isSignUp ? "/connexion" : "/inscription"}${keptQuery}`;
+  // Après le clic sur le lien d'activation : connexion automatique, puis la page de connexion renvoie vers la suite
+  const verifyCallback = `/connexion${keptQuery}`;
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  async function resend() {
+    if (!pending || cooldown > 0) return;
+    setCooldown(60);
+    setResent(false);
+    const { error } = await authClient.sendVerificationEmail({ email: pending.email, callbackURL: verifyCallback });
+    if (error) {
+      setError(error.status === 429 ? "Trop de demandes. Réessaie dans une minute." : "L'envoi a échoué. Réessaie dans un instant.");
+    } else setResent(true);
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -68,11 +96,17 @@ export function AuthForm({
     const fetchOptions = captcha ? { headers: { "x-captcha-response": captcha } } : undefined;
 
     setLoading(true);
-    const { error } = isSignUp
-      ? await authClient.signUp.email({ name: String(form.get("name")), email, password, fetchOptions })
-      : await authClient.signIn.email({ email, password, fetchOptions });
+    const { data, error } = isSignUp
+      ? await authClient.signUp.email({ name: String(form.get("name")), email, password, callbackURL: verifyCallback, fetchOptions })
+      : await authClient.signIn.email({ email, password, callbackURL: verifyCallback, fetchOptions });
     setLoading(false);
 
+    if (error?.code === "EMAIL_NOT_VERIFIED") {
+      // Le serveur vient de renvoyer un lien d'activation
+      setPending({ email, reason: "signin" });
+      setCooldown(60);
+      return;
+    }
     if (error) {
       setError(
         error.status === 401 || error.code === "INVALID_EMAIL_OR_PASSWORD"
@@ -85,8 +119,56 @@ export function AuthForm({
       );
       return;
     }
+    // Inscription avec activation par e-mail : pas encore de session
+    if (isSignUp && data && !("token" in data && data.token)) {
+      setPending({ email, reason: "signup" });
+      setCooldown(60);
+      return;
+    }
     router.push(safeNext);
     router.refresh();
+  }
+
+  if (pending) {
+    return (
+      <div className="text-center">
+        <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-[#efebff] text-(--violet)">
+          <MailCheck className="size-7" />
+        </span>
+        <h1 className="mt-6 text-[28px] leading-tight font-semibold tracking-[-0.035em]">Vérifie ta boîte mail</h1>
+        <p className="mt-3 text-[15px] leading-relaxed text-(--grey)">
+          {pending.reason === "signin" ? "Ton compte n'est pas encore activé. " : ""}
+          On a envoyé un lien d&apos;activation à <b className="font-semibold text-(--ink)">{pending.email}</b>. Clique dessus pour
+          activer ton compte : tu seras connecté automatiquement.
+        </p>
+        <p className="mt-2 text-[13px] text-(--grey)">Le lien est valable 24 heures. Pense à regarder dans les courriers indésirables.</p>
+        {error && (
+          <p className="mt-5 rounded-xl bg-[#fdecec] px-4 py-3 text-[14px] text-[#b42318]" role="alert">
+            {error}
+          </p>
+        )}
+        {resent && <p className="mt-5 text-[14px] font-medium text-[#067647]" role="status">Nouveau lien envoyé.</p>}
+        <button
+          type="button"
+          onClick={resend}
+          disabled={cooldown > 0}
+          className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-xl border border-(--line) bg-white text-[15px] font-semibold transition hover:border-(--ink) disabled:opacity-60"
+        >
+          {cooldown > 0 ? `Renvoyer le lien (${cooldown} s)` : "Renvoyer le lien"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setPending(null);
+            setError(null);
+            setResent(false);
+          }}
+          className="mt-4 text-[14px] font-semibold text-(--violet) hover:underline"
+        >
+          Utiliser une autre adresse
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -132,7 +214,7 @@ export function AuthForm({
               });
               if (error) {
                 setGoogleLoading(false);
-                setError(googleErrorMessage(error.code ?? ""));
+                setError(authErrorMessage(error.code ?? ""));
               }
             }}
           >
