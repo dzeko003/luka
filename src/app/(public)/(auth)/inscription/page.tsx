@@ -22,7 +22,13 @@ export default async function Page({ searchParams }: PageProps<"/inscription">) 
       title="Décris les données. Luka remplit le tableau."
       points={[`${limits.free.collectesPerDay} collectes gratuites par jour`, "La source de chaque ligne", "Premium bientôt disponible"]}
     >
-      <AuthForm mode="inscription" googleEnabled={googleEnabled} defaultEmail={email} next={next} />
+      <AuthForm
+        mode="inscription"
+        googleEnabled={googleEnabled}
+        defaultEmail={email}
+        next={next}
+        googleError={typeof sp.error === "string" ? sp.error.slice(0, 80) : undefined}
+      />
     </AuthShell>
   );
 }
