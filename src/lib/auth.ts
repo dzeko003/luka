@@ -1,9 +1,10 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
+import { APIError } from "better-auth/api";
 import { captcha } from "better-auth/plugins";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { db, schema } from "@/db";
 import { eq } from "drizzle-orm";
 import { deleteAccountMail, mailEnabled, resetPasswordMail, sendMail, verificationMail } from "./mailer";
@@ -73,6 +74,17 @@ export const auth = betterAuth({
           },
         }
       : {},
+  databaseHooks: {
+    session: {
+      create: {
+        // Un compte suspendu par un administrateur ne peut plus ouvrir de session (e-mail ou Google)
+        before: async (session) => {
+          const [u] = await db.select({ blocked: schema.user.blocked }).from(schema.user).where(eq(schema.user.id, session.userId));
+          if (u?.blocked) throw new APIError("FORBIDDEN", { message: "Compte suspendu", code: "ACCOUNT_BLOCKED" });
+        },
+      },
+    },
+  },
   account: {
     // « Mon compte » : relier un compte Google, même avec une autre adresse que celle du compte Luka
     accountLinking: { enabled: true, trustedProviders: ["google"], allowDifferentEmails: true },
@@ -117,6 +129,13 @@ export async function requireUser(): Promise<SessionUser> {
   const s = await getSession();
   if (!s) redirect("/connexion");
   return s.user;
+}
+
+/** Page réservée aux administrateurs : les autres reçoivent une 404. */
+export async function requireAdmin(): Promise<SessionUser> {
+  const user = await requireUser();
+  if (user.role !== "admin" || user.blocked) notFound();
+  return user;
 }
 
 export const googleEnabled = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
