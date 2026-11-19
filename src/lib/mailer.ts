@@ -106,3 +106,17 @@ export function collecteMail(name: string, url: string, c: { title: string; rows
     ignore: "Tu reçois cet e-mail parce que ta collecte a duré plus de quelques minutes.",
   });
 }
+
+/** E-mail de confirmation de la suppression du compte. */
+export function deleteAccountMail(name: string, url: string) {
+  return layout({
+    name,
+    url,
+    subject: "Confirme la suppression de ton compte Luka",
+    intro:
+      "Tu as demandé à supprimer ton compte Luka. Clique sur le bouton ci-dessous pour confirmer : ton compte, tes collectes et leurs lignes seront supprimés définitivement.",
+    button: "Supprimer définitivement mon compte",
+    validity: "1 heure",
+    ignore: "Si tu n'as rien demandé, ignore cet e-mail : ton compte reste intact. Pense alors à changer ton mot de passe.",
+  });
+}

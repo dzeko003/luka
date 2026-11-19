@@ -27,7 +27,13 @@ export default async function Page({ searchParams }: PageProps<"/connexion">) {
         defaultEmail={email}
         next={next}
         authError={typeof sp.error === "string" ? sp.error.slice(0, 80) : undefined}
-        notice={sp.reinitialise === "1" ? "Mot de passe modifié. Connecte-toi avec ton nouveau mot de passe." : undefined}
+        notice={
+          sp.reinitialise === "1"
+            ? "Mot de passe modifié. Connecte-toi avec ton nouveau mot de passe."
+            : sp.compte === "supprime"
+              ? "Ton compte et tes collectes ont été supprimés. À bientôt sur Luka."
+              : undefined
+        }
       />
     </AuthShell>
   );

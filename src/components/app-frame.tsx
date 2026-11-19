@@ -18,6 +18,7 @@ import {
   Plus,
   Search,
   Store,
+  UserRound,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -91,6 +92,13 @@ function AccountSwitcher({ user }: { user: Props["user"] }) {
             <p className="truncate text-[13px] font-medium">{user.name}</p>
             <p className="truncate text-xs text-muted">{user.email}</p>
           </div>
+          <Link
+            href="/compte"
+            onClick={() => setOpen(false)}
+            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-[13px] hover:bg-surface-2"
+          >
+            <UserRound className="size-4" /> Mon compte
+          </Link>
           <button
             className="flex w-full items-center gap-2.5 px-3 py-2.5 text-[13px] text-danger hover:bg-danger-soft"
             onClick={async () => {

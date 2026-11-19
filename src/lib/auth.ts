@@ -6,7 +6,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db, schema } from "@/db";
 import { eq } from "drizzle-orm";
-import { mailEnabled, resetPasswordMail, sendMail, verificationMail } from "./mailer";
+import { deleteAccountMail, mailEnabled, resetPasswordMail, sendMail, verificationMail } from "./mailer";
 
 const requireVerification = mailEnabled || process.env.NODE_ENV !== "production";
 
@@ -73,7 +73,21 @@ export const auth = betterAuth({
           },
         }
       : {},
+  account: {
+    // « Mon compte » : relier un compte Google, même avec une autre adresse que celle du compte Luka
+    accountLinking: { enabled: true, trustedProviders: ["google"], allowDifferentEmails: true },
+  },
   user: {
+    // Suppression confirmée par un lien reçu par e-mail (fonctionne aussi pour les comptes Google sans mot de passe)
+    deleteUser: {
+      enabled: true,
+      deleteTokenExpiresIn: 60 * 60,
+      sendDeleteAccountVerification: async ({ user, url }) => {
+        void sendMail({ to: user.email, ...deleteAccountMail(user.name, url) }).catch((e) =>
+          console.error(`[mail] échec de l'e-mail de suppression : ${(e as Error).message}`),
+        );
+      },
+    },
     additionalFields: {
       plan: { type: "string", defaultValue: "free", input: false },
       credits: { type: "number", defaultValue: 0, input: false },
