@@ -6,6 +6,7 @@ Le Caddy commun (`/srv/edge`) sert le domaine et gère le HTTPS ; Luka y dépose
 | Conteneur | Rôle |
 |---|---|
 | `web` | l'application (réseau `edge` sous le nom `luka-web`, aucun port ouvert) |
+| `worker` | exécute les collectes (même image que `web`, sans trafic web, réseau `egress` pour Internet) |
 | `db` | PostgreSQL 17 (réseau interne `data`, volume `luka_db-data`) |
 | `backup` | `pg_dump` quotidien dans `/srv/luka/backups`, 14 jours conservés |
 | `migrate` | applique les migrations à chaque déploiement, puis s'arrête |
@@ -28,13 +29,18 @@ Le script envoie le code, construit les images sur le serveur, applique les migr
 remplace l'application (retour automatique à la version précédente si elle ne démarre pas)
 et publie le site dans Caddy.
 
+Les collectes en cours ne sont pas interrompues : le nouveau `worker` démarre à côté de l'ancien,
+qui termine ses collectes (30 min au plus) puis s'arrête en arrière-plan.
+
 ## Exploitation
 
 Sur le serveur, en tant que `deploy` (`sudo -iu deploy`, puis `cd /srv/luka`) :
 
 ```bash
 dc() { docker compose --env-file .release --env-file secrets.env "$@"; }
-dc logs -f web                         # journaux
+dc logs -f web worker                  # journaux
+dc up -d --force-recreate web          # après une modification de web.env…
+dc up -d --force-recreate worker       # …et pour le travailleur (attend la fin de ses collectes)
 dc ps                                  # état des conteneurs
 gunzip -c backups/luka-XXXX.sql.gz | dc exec -T db psql -U luka luka   # restaurer une sauvegarde
 ```

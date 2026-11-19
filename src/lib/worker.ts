@@ -11,6 +11,9 @@ import { runCollecte } from "./engine";
  *   (FOR UPDATE SKIP LOCKED : plusieurs serveurs peuvent tourner sans se marcher dessus).
  * - Pendant l'exécution, il met à jour un « signal de vie » : une collecte dont le signal
  *   s'arrête (serveur redémarré, plantage) est relancée, ou marquée en échec après 2 essais.
+ * - En production, il tourne dans son propre conteneur (service « worker ») : à l'arrêt
+ *   (SIGTERM, lors d'un déploiement), il ne prend plus de nouvelle collecte et termine celles
+ *   en cours avant de s'arrêter. Pendant ce temps, le nouveau travailleur prend les suivantes.
  */
 
 const POLL_MS = 2000;
@@ -84,12 +87,32 @@ async function runOne(id: string) {
   }
 }
 
-const state = globalThis as unknown as { lukaWorker?: { running: number; started: boolean } };
+type WorkerState = { running: number; started: boolean; draining: boolean };
+const state = globalThis as unknown as { lukaWorker?: WorkerState };
+
+/** Arrêt propre : plus de nouvelle collecte, on attend la fin de celles en cours, puis on quitte. */
+function drainOnSignal(w: WorkerState) {
+  const stop = (signal: string) => {
+    if (w.draining) return;
+    w.draining = true;
+    console.log(`[worker] ${signal} reçu : ${w.running} collecte(s) en cours, arrêt dès qu'elles sont terminées`);
+    const wait = setInterval(() => {
+      if (w.running > 0) return;
+      clearInterval(wait);
+      console.log("[worker] collectes terminées, arrêt");
+      process.exit(0);
+    }, 1000);
+  };
+  process.on("SIGTERM", () => stop("SIGTERM"));
+  process.on("SIGINT", () => stop("SIGINT"));
+}
 
 /** Démarre la boucle (une seule fois par processus, même avec les rechargements à chaud). */
 export function startWorker() {
   if (state.lukaWorker?.started) return;
-  const w = (state.lukaWorker = { running: 0, started: true });
+  const w = (state.lukaWorker = { running: 0, started: true, draining: false });
+  // Next.js quitte immédiatement sur SIGTERM, sauf si NEXT_MANUAL_SIG_HANDLE est défini (conteneur « worker »)
+  if (process.env.NEXT_MANUAL_SIG_HANDLE) drainOnSignal(w);
   let lastRecovery = 0;
 
   const tick = async () => {
@@ -98,7 +121,7 @@ export function startWorker() {
         lastRecovery = Date.now();
         await recoverDead();
       }
-      while (w.running < limits.workerConcurrency) {
+      while (!w.draining && w.running < limits.workerConcurrency) {
         const id = await claimNext();
         if (!id) break;
         w.running++;
