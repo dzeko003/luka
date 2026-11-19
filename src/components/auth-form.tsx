@@ -22,20 +22,35 @@ function GoogleIcon() {
   );
 }
 
+function googleErrorMessage(code: string) {
+  const c = code.toLowerCase();
+  if (c.includes("access_denied")) return "Connexion avec Google annulée.";
+  if (c.includes("link") || c.includes("email_doesn")) {
+    return "Ce compte Google n'a pas pu être relié à un compte existant. Connecte-toi avec ton email et ton mot de passe.";
+  }
+  if (c.includes("blocked") || c.includes("banned")) return "Ton compte est suspendu. Contacte l'administrateur.";
+  return "La connexion avec Google a échoué. Réessaie, ou utilise ton email.";
+}
+
 export function AuthForm({
   mode,
   googleEnabled,
   defaultEmail,
   next = "/tableau-de-bord",
+  googleError,
 }: {
   mode: "connexion" | "inscription";
   googleEnabled: boolean;
   defaultEmail?: string;
   /** Page où aller après la connexion (chemin interne uniquement). */
   next?: string;
+  /** Code d'erreur renvoyé après un échec de connexion Google (paramètre « error »). */
+  googleError?: string;
 }) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(googleError ? googleErrorMessage(googleError) : null);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/tableau-de-bord";
   const [loading, setLoading] = useState(false);
   const [captcha, setCaptcha] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -70,7 +85,7 @@ export function AuthForm({
       );
       return;
     }
-    router.push(next.startsWith("/") && !next.startsWith("//") ? next : "/tableau-de-bord");
+    router.push(safeNext);
     router.refresh();
   }
 
@@ -105,9 +120,23 @@ export function AuthForm({
           <button
             type="button"
             className="mt-7 inline-flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-(--line) bg-white text-[15px] font-semibold transition hover:border-(--ink)"
-            onClick={() => authClient.signIn.social({ provider: "google", callbackURL: next })}
+            disabled={googleLoading}
+            onClick={async () => {
+              setError(null);
+              setGoogleLoading(true);
+              // En cas d'échec, Google renvoie sur cette page avec ?error=… (message affiché ci-dessous)
+              const { error } = await authClient.signIn.social({
+                provider: "google",
+                callbackURL: safeNext,
+                errorCallbackURL: isSignUp ? "/inscription" : "/connexion",
+              });
+              if (error) {
+                setGoogleLoading(false);
+                setError(googleErrorMessage(error.code ?? ""));
+              }
+            }}
           >
-            <GoogleIcon /> Continuer avec Google
+            <GoogleIcon /> {googleLoading ? "Redirection vers Google…" : "Continuer avec Google"}
           </button>
           <div className="my-6 flex items-center gap-3 text-[13px] text-(--grey)">
             <span className="h-px flex-1 bg-(--line)" /> ou avec ton email <span className="h-px flex-1 bg-(--line)" />

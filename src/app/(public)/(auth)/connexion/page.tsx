@@ -21,7 +21,13 @@ export default async function Page({ searchParams }: PageProps<"/connexion">) {
       title="Tes collectes t'attendent, avec leurs sources."
       points={["Reprends là où tu t'étais arrêté", "Vérifie, corrige et valide tes lignes", "Exporte en CSV (Excel) ou en JSON"]}
     >
-      <AuthForm mode="connexion" googleEnabled={googleEnabled} defaultEmail={email} next={next} />
+      <AuthForm
+        mode="connexion"
+        googleEnabled={googleEnabled}
+        defaultEmail={email}
+        next={next}
+        googleError={typeof sp.error === "string" ? sp.error.slice(0, 80) : undefined}
+      />
     </AuthShell>
   );
 }
