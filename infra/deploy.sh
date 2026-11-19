@@ -59,6 +59,17 @@ if ! dc up -d --remove-orphans --wait --wait-timeout 120 web; then
 fi
 dc up -d backup
 
+echo "==> Travailleur des collectes"
+# Le nouveau travailleur démarre à côté de l'ancien ; l'ancien finit ses collectes en cours
+# (30 min au plus) puis s'arrête, en arrière-plan. Aucune collecte n'est interrompue.
+old_workers=$(dc ps -q worker)
+count=$(grep -c . <<<"$old_workers" || true)
+dc up -d --no-deps --no-recreate --scale "worker=$((count + 1))" --wait --wait-timeout 120 worker
+for id in $old_workers; do
+    setsid nohup sh -c "docker stop -t 1800 $id && docker rm $id" >/dev/null 2>&1 &
+done
+[[ -z $old_workers ]] || echo "    $count ancien(s) travailleur(s) : arrêt après la fin de leurs collectes"
+
 echo "==> Site dans le proxy commun"
 sed "s|__DOMAIN__|$domain|g" luka.caddy >/srv/edge/sites/luka.caddy
 chmod 644 /srv/edge/sites/luka.caddy
