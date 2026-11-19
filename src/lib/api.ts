@@ -12,6 +12,13 @@ export async function apiUser() {
   return s.user;
 }
 
+/** Administrateur connecté à la console (session validée par Google Authenticator), sinon null. */
+export async function apiConsoleAdmin() {
+  const s = await getSession();
+  if (!s || s.user.blocked || s.user.role !== "admin" || !s.user.twoFactorEnabled || !s.session.mfaVerified) return null;
+  return s.user;
+}
+
 export async function getOwnedCollecte(id: string, userId: string) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return undefined;
   const [c] = await db

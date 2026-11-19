@@ -25,6 +25,7 @@ export const user = pgTable("user", {
   credits: integer("credits").notNull().default(0), // crédits premium (V2)
   role: text("role").notNull().default("member"), // member | admin
   blocked: boolean("blocked").notNull().default(false),
+  twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -38,6 +39,8 @@ export const session = pgTable("session", {
   userId: text("user_id")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
+  // Session ouverte avec le mot de passe ET le code Google Authenticator : seule clé de la console admin
+  mfaVerified: boolean("mfa_verified").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -68,6 +71,23 @@ export const verification = pgTable("verification", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+/** Double authentification (plugin twoFactor de Better Auth) : secret TOTP et codes de secours, chiffrés. */
+export const twoFactor = pgTable(
+  "two_factor",
+  {
+    id: text("id").primaryKey(),
+    secret: text("secret").notNull(),
+    backupCodes: text("backup_codes").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    verified: boolean("verified").notNull().default(true),
+    failedVerificationCount: integer("failed_verification_count").notNull().default(0),
+    lockedUntil: timestamp("locked_until"),
+  },
+  (t) => [index("two_factor_user_id_idx").on(t.userId), index("two_factor_secret_idx").on(t.secret)],
+);
 
 /* ------------------------------------------------------------------ */
 /* Collectes                                                           */
@@ -162,4 +182,54 @@ export const notifications = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("notifications_user_idx").on(t.userId, t.read)],
+);
+
+/* ------------------------------------------------------------------ */
+/* Statistiques de la console d'administration                         */
+/* ------------------------------------------------------------------ */
+
+/** Visites de la page d'accueil : pays déduit de l'adresse IP, qui n'est pas conservée. */
+export const visits = pgTable(
+  "visits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    path: text("path").notNull(),
+    country: text("country"), // code ISO à deux lettres, null si inconnu
+    visitor: text("visitor").notNull(), // empreinte anonyme, renouvelée chaque jour (visiteurs uniques)
+    referrer: text("referrer"), // domaine d'origine
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("visits_created_idx").on(t.createdAt)],
+);
+
+/** Journal des connexions réussies (e-mail, Google, code de double authentification, lien d'activation). */
+export const logins = pgTable(
+  "logins",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    method: text("method").notNull(), // email | google | 2fa | lien
+    country: text("country"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("logins_user_idx").on(t.userId, t.createdAt), index("logins_created_idx").on(t.createdAt)],
+);
+
+/** Paiements reçus (saisis par un administrateur en attendant le paiement Mobile Money intégré). */
+export const payments = pgTable(
+  "payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    amount: integer("amount").notNull(), // en FCFA
+    method: text("method").notNull(), // mobile_money | especes | virement | autre
+    note: text("note"),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("payments_user_idx").on(t.userId, t.createdAt), index("payments_created_idx").on(t.createdAt)],
 );

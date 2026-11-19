@@ -50,6 +50,14 @@ export const llmFree = {
   model: process.env.LLM_MODEL ?? "openai/gpt-oss-120b",
 };
 
+/** Prix du modèle IA, en dollars par million de jetons (pour estimer le coût par client). */
+export const llmPricing = {
+  inputPerMTok: num(process.env.LLM_PRICE_INPUT_USD_PER_MTOK, 0.15),
+  outputPerMTok: num(process.env.LLM_PRICE_OUTPUT_USD_PER_MTOK, 0.6),
+};
+export const llmCostUsd = (promptTokens: number, completionTokens: number) =>
+  (promptTokens * llmPricing.inputPerMTok + completionTokens * llmPricing.outputPerMTok) / 1_000_000;
+
 export const tavilyKey = process.env.TAVILY_API_KEY ?? "";
 
 /** Sources ouvertes : OpenStreetMap (Overpass pour les lieux, Nominatim pour les villes). */

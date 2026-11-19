@@ -72,6 +72,104 @@
   font-feature-settings: "cv11", "ss01";
 }
 
+/* Administration : noir neutre inspiré de la maquette « User management » (Dribbble), avec un mode clair.
+   Le thème suit le système, sauf choix enregistré (attribut data-theme posé avant l'affichage). */
+.admin {
+  --bg: #f6f6f7;
+  --surface: #ffffff;
+  --surface-2: #f1f1f3;
+  --hover: #e8e8eb;
+  --border: #e6e6e9;
+  --border-strong: #d9d9de;
+  --focus: #8e8e96;
+  --text: #18181b;
+  --muted: #63636b;
+  --ink: #18181b;
+  --danger: #c2271d;
+  --danger-soft: #fdeceb;
+  --danger-border: #f5c6c2;
+  --warn: #9a5b00;
+  --warn-soft: #fff4e0;
+  --warn-border: #f3d7a4;
+  --info: #1d5fc4;
+  --info-soft: #eaf2fe;
+  --info-border: #c4d9f8;
+  --success: #15803d;
+  --success-soft: #e8f7ee;
+  --success-border: #b8e3c8;
+  --chart: #18181b;
+  --chart-2: #b4b4bb;
+  color-scheme: light;
+  --accent: var(--text);
+  --accent-hover: var(--text);
+  --accent-soft: var(--surface-2);
+  --accent-text: var(--surface);
+  --link: var(--text);
+  --bar: var(--surface);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-console), system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+}
+
+.admin[data-theme="dark"] {
+  --bg: #0e0e0f;
+  --surface: #151516;
+  --surface-2: #1d1d1f;
+  --hover: #262629;
+  --border: #232325;
+  --border-strong: #2e2e31;
+  --focus: #6a6a70;
+  --text: #ededee;
+  --muted: #9b9ba1;
+  --ink: #ededee;
+  --danger: #f87171;
+  --danger-soft: #2b1617;
+  --danger-border: #4a2224;
+  --warn: #fbbf24;
+  --warn-soft: #2a2210;
+  --warn-border: #4a3a14;
+  --info: #93c5fd;
+  --info-soft: #15223a;
+  --info-border: #203a63;
+  --success: #4ade80;
+  --success-soft: #142a1c;
+  --success-border: #1f4a2f;
+  --chart: #ededee;
+  --chart-2: #6b6b72;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  .admin:not([data-theme="light"]) {
+  --bg: #0e0e0f;
+  --surface: #151516;
+  --surface-2: #1d1d1f;
+  --hover: #262629;
+  --border: #232325;
+  --border-strong: #2e2e31;
+  --focus: #6a6a70;
+  --text: #ededee;
+  --muted: #9b9ba1;
+  --ink: #ededee;
+  --danger: #f87171;
+  --danger-soft: #2b1617;
+  --danger-border: #4a2224;
+  --warn: #fbbf24;
+  --warn-soft: #2a2210;
+  --warn-border: #4a3a14;
+  --info: #93c5fd;
+  --info-soft: #15223a;
+  --info-border: #203a63;
+  --success: #4ade80;
+  --success-soft: #142a1c;
+  --success-border: #1f4a2f;
+  --chart: #ededee;
+  --chart-2: #6b6b72;
+  color-scheme: dark;
+  }
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
@@ -90,6 +188,16 @@
   --color-info: var(--info);
   --color-info-soft: var(--info-soft);
   --color-ink: var(--ink);
+  --color-hover: var(--hover, var(--surface-2));
+  --color-focus: var(--focus, var(--accent));
+  --color-danger-border: var(--danger-border, var(--border));
+  --color-warn-border: var(--warn-border, var(--border));
+  --color-info-border: var(--info-border, var(--border));
+  --color-success-border: var(--success-border, var(--border));
+  --color-chart: var(--chart, var(--accent));
+  --color-chart-2: var(--chart-2, var(--muted));
+  --color-success: var(--success, #34d399);
+  --color-success-soft: var(--success-soft, #142a1c);
   --color-bar: var(--bar, var(--surface-2));
   --color-border-strong: var(--border-strong, var(--border));
   --color-link: var(--link, var(--accent));

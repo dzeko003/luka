@@ -1,27 +1,39 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
-import { APIError } from "better-auth/api";
-import { captcha } from "better-auth/plugins";
+import { APIError, createAuthMiddleware } from "better-auth/api";
+import { captcha, twoFactor } from "better-auth/plugins";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { db, schema } from "@/db";
 import { eq } from "drizzle-orm";
+import { clientIp, countryOf } from "./geo";
 import { deleteAccountMail, mailEnabled, resetPasswordMail, sendMail, verificationMail } from "./mailer";
 
 const requireVerification = mailEnabled || process.env.NODE_ENV !== "production";
 
-const plugins = [];
-if (process.env.TURNSTILE_SECRET_KEY) {
-  plugins.push(
-    captcha({
-      provider: "cloudflare-turnstile",
-      secretKey: process.env.TURNSTILE_SECRET_KEY,
-      endpoints: ["/sign-up/email", "/sign-in/email", "/request-password-reset"],
-    }),
-  );
+// Captcha Turnstile : seulement si la clé secrète est configurée
+const captchaPlugins = process.env.TURNSTILE_SECRET_KEY
+  ? [
+      captcha({
+        provider: "cloudflare-turnstile",
+        secretKey: process.env.TURNSTILE_SECRET_KEY,
+        endpoints: ["/sign-up/email", "/sign-in/email", "/request-password-reset"],
+      }),
+    ]
+  : [];
+
+/** Connexions comptées dans le journal, selon le chemin qui a ouvert la session. */
+function loginMethod(path: string): string | null {
+  if (path === "/sign-in/email") return "email";
+  if (path.startsWith("/callback/")) return "google";
+  if (path === "/two-factor/verify-totp" || path === "/two-factor/verify-backup-code") return "2fa";
+  if (path === "/verify-email") return "lien";
+  return null;
 }
-plugins.push(nextCookies()); // doit rester en dernier
+
+/** Chemins où une réussite du code à 6 chiffres (ou d'un code de secours) ouvre une session. */
+const MFA_PATHS = new Set(["/two-factor/verify-totp", "/two-factor/verify-backup-code"]);
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -31,6 +43,7 @@ export const auth = betterAuth({
       session: schema.session,
       account: schema.account,
       verification: schema.verification,
+      twoFactor: schema.twoFactor,
     },
   }),
   emailAndPassword: {
@@ -85,6 +98,31 @@ export const auth = betterAuth({
       },
     },
   },
+  session: {
+    additionalFields: {
+      mfaVerified: { type: "boolean", defaultValue: false, input: false },
+    },
+  },
+  hooks: {
+    // La session créée juste après un code Google Authenticator valide est marquée : elle seule ouvre la console.
+    // Une connexion Google ou par mot de passe seul ne passe pas par ici.
+    after: createAuthMiddleware(async (ctx) => {
+      const created = ctx.context.newSession;
+      if (!ctx.path || !created) return;
+      if (MFA_PATHS.has(ctx.path)) {
+        await db.update(schema.session).set({ mfaVerified: true }).where(eq(schema.session.id, created.session.id));
+      }
+      // Journal des connexions. Ce crochet passe avant celui du plugin twoFactor : une connexion par mot de passe
+      // d'un compte protégé n'est comptée qu'après le code. L'activation (déjà connecté) n'est pas une connexion.
+      const method = loginMethod(ctx.path);
+      if (!method || ctx.context.session) return;
+      if (method === "email" && (created.user as { twoFactorEnabled?: boolean }).twoFactorEnabled) return;
+      await db
+        .insert(schema.logins)
+        .values({ userId: created.user.id, method, country: ctx.headers ? countryOf(clientIp(ctx.headers)) : null })
+        .catch((e) => console.error(`[connexions] journal non enregistré : ${(e as Error).message}`));
+    }),
+  },
   account: {
     // « Mon compte » : relier un compte Google, même avec une autre adresse que celle du compte Luka
     accountLinking: { enabled: true, trustedProviders: ["google"], allowDifferentEmails: true },
@@ -105,6 +143,8 @@ export const auth = betterAuth({
       credits: { type: "number", defaultValue: 0, input: false },
       role: { type: "string", defaultValue: "member", input: false },
       blocked: { type: "boolean", defaultValue: false, input: false },
+      // Géré par le plugin twoFactor ; déclaré ici pour le typage de la session
+      twoFactorEnabled: { type: "boolean", defaultValue: false, input: false },
     },
   },
   // Limite les tentatives de connexion/inscription par IP
@@ -115,7 +155,12 @@ export const auth = betterAuth({
     // Évite d'inonder une boîte mail de liens
     customRules: { "/request-password-reset": { window: 60, max: 3 }, "/send-verification-email": { window: 60, max: 3 } },
   },
-  plugins,
+  plugins: [
+    ...captchaPlugins,
+    // Double authentification (Google Authenticator) : obligatoire pour la console d'administration
+    twoFactor({ issuer: "Luka Admin", backupCodeOptions: { amount: 10, length: 10 } }),
+    nextCookies(), // doit rester en dernier
+  ],
 });
 
 export type SessionUser = typeof auth.$Infer.Session.user;
@@ -131,10 +176,18 @@ export async function requireUser(): Promise<SessionUser> {
   return s.user;
 }
 
-/** Page réservée aux administrateurs : les autres reçoivent une 404. */
-export async function requireAdmin(): Promise<SessionUser> {
-  const user = await requireUser();
+/**
+ * Console d'administration : rôle admin, double authentification activée, et session ouverte avec
+ * le mot de passe puis le code Google Authenticator. Sinon : 404 pour les non-admins, sinon
+ * redirection vers la connexion de la console ou vers l'activation de la double authentification.
+ */
+export async function requireConsoleAdmin(): Promise<SessionUser> {
+  const s = await getSession();
+  if (!s) redirect("/admin/connexion");
+  const user = s.user;
   if (user.role !== "admin" || user.blocked) notFound();
+  if (!user.twoFactorEnabled) redirect("/admin/securite");
+  if (!s.session.mfaVerified) redirect("/admin/connexion?session=1");
   return user;
 }
 

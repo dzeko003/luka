@@ -127,6 +127,11 @@ export function AuthForm({
       );
       return;
     }
+    // Compte protégé par Google Authenticator (administrateurs) : le code est demandé sur la console
+    if (data && "twoFactorRedirect" in data && data.twoFactorRedirect) {
+      router.push("/admin/connexion?etape=code");
+      return;
+    }
     // Inscription avec activation par e-mail : pas encore de session
     if (isSignUp && data && !("token" in data && data.token)) {
       setPending({ email, reason: "signup" });
