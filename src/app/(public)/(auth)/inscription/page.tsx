@@ -27,7 +27,7 @@ export default async function Page({ searchParams }: PageProps<"/inscription">) 
         googleEnabled={googleEnabled}
         defaultEmail={email}
         next={next}
-        googleError={typeof sp.error === "string" ? sp.error.slice(0, 80) : undefined}
+        authError={typeof sp.error === "string" ? sp.error.slice(0, 80) : undefined}
       />
     </AuthShell>
   );
