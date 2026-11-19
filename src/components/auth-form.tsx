@@ -43,6 +43,7 @@ export function AuthForm({
   defaultEmail,
   next = "/tableau-de-bord",
   authError,
+  notice,
 }: {
   mode: "connexion" | "inscription";
   googleEnabled: boolean;
@@ -51,6 +52,8 @@ export function AuthForm({
   next?: string;
   /** Code d'erreur reçu dans l'URL (paramètre « error ») : connexion Google ou lien d'activation. */
   authError?: string;
+  /** Message de confirmation affiché au-dessus du formulaire (ex. mot de passe modifié). */
+  notice?: string;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(authError ? authErrorMessage(authError) : null);
@@ -226,7 +229,12 @@ export function AuthForm({
         </>
       )}
 
-      <form onSubmit={onSubmit} className={`space-y-4 ${googleEnabled ? "" : "mt-7"}`}>
+      {notice && !error && (
+        <p className={`rounded-xl bg-[#ecfdf3] px-4 py-3 text-[14px] text-[#067647] ${googleEnabled ? "mb-4" : "mt-7"}`} role="status">
+          {notice}
+        </p>
+      )}
+      <form onSubmit={onSubmit} className={`space-y-4 ${googleEnabled || notice ? "" : "mt-7"}`}>
         {isSignUp && (
           <div>
             <label className={label} htmlFor="name">Nom</label>
@@ -247,7 +255,14 @@ export function AuthForm({
           />
         </div>
         <div>
-          <label className={label} htmlFor="password">Mot de passe</label>
+          <div className="mb-1.5 flex items-baseline justify-between">
+            <label className="text-[14px] font-medium" htmlFor="password">Mot de passe</label>
+            {!isSignUp && (
+              <Link href="/mot-de-passe-oublie" className="text-[13px] font-medium text-(--violet) hover:underline">
+                Mot de passe oublié ?
+              </Link>
+            )}
+          </div>
           <div className="relative">
             <input
               className={`${input} pr-12`}

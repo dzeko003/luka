@@ -5,7 +5,8 @@ import { captcha } from "better-auth/plugins";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db, schema } from "@/db";
-import { mailEnabled, sendMail, verificationMail } from "./mailer";
+import { eq } from "drizzle-orm";
+import { mailEnabled, resetPasswordMail, sendMail, verificationMail } from "./mailer";
 
 const requireVerification = mailEnabled || process.env.NODE_ENV !== "production";
 
@@ -15,7 +16,7 @@ if (process.env.TURNSTILE_SECRET_KEY) {
     captcha({
       provider: "cloudflare-turnstile",
       secretKey: process.env.TURNSTILE_SECRET_KEY,
-      endpoints: ["/sign-up/email", "/sign-in/email"],
+      endpoints: ["/sign-up/email", "/sign-in/email", "/request-password-reset"],
     }),
   );
 }
@@ -37,6 +38,18 @@ export const auth = betterAuth({
     // Compte activé par le lien reçu par e-mail. Sans SMTP en production, l'activation est désactivée
     // pour ne pas bloquer les inscriptions ; en développement, le lien s'affiche dans la console.
     requireEmailVerification: requireVerification,
+    resetPasswordTokenExpiresIn: 60 * 60,
+    // Après un changement de mot de passe, toutes les sessions ouvertes sont fermées
+    revokeSessionsOnPasswordReset: true,
+    sendResetPassword: async ({ user, url }) => {
+      void sendMail({ to: user.email, ...resetPasswordMail(user.name, url) }).catch((e) =>
+        console.error(`[mail] échec de l'e-mail de réinitialisation : ${(e as Error).message}`),
+      );
+    },
+    // Le lien reçu par e-mail prouve que l'adresse appartient bien à l'utilisateur
+    onPasswordReset: async ({ user }) => {
+      if (!user.emailVerified) await db.update(schema.user).set({ emailVerified: true }).where(eq(schema.user.id, user.id));
+    },
   },
   emailVerification: {
     sendOnSignUp: requireVerification,
@@ -69,7 +82,13 @@ export const auth = betterAuth({
     },
   },
   // Limite les tentatives de connexion/inscription par IP
-  rateLimit: { enabled: true, window: 60, max: 20 },
+  rateLimit: {
+    enabled: true,
+    window: 60,
+    max: 20,
+    // Évite d'inonder une boîte mail de liens
+    customRules: { "/request-password-reset": { window: 60, max: 3 }, "/send-verification-email": { window: 60, max: 3 } },
+  },
   plugins,
 });
 

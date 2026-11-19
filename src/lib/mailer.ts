@@ -38,13 +38,13 @@ export async function sendMail(mail: { to: string; subject: string; html: string
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-/** E-mail d'activation du compte (inscription avec e-mail et mot de passe). */
-export function verificationMail(name: string, url: string) {
-  const first = name.trim().split(/\s+/)[0] || "";
+/** Gabarit commun : salutation, message, bouton, durée de validité du lien. */
+function layout(o: { name: string; intro: string; button: string; url: string; validity: string; ignore: string; subject: string }) {
+  const first = o.name.trim().split(/\s+/)[0] || "";
   const hello = first ? `Bonjour ${first},` : "Bonjour,";
   const text =
-    `${hello}\n\nBienvenue sur Luka ! Pour activer ton compte, ouvre ce lien (valable 24 heures) :\n${url}\n\n` +
-    "Si tu n'as pas créé de compte sur Luka, ignore simplement cet e-mail.\n\nL'équipe Luka";
+    `${hello}\n\n${o.intro} Ouvre ce lien (valable ${o.validity}) :\n${o.url}\n\n${o.ignore}\n\nL'équipe Luka`;
+  const url = escapeHtml(o.url);
   const html = `<!doctype html>
 <html lang="fr"><body style="margin:0;background:#f4f4f7;font-family:Arial,Helvetica,sans-serif;color:#14112b">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px">
@@ -53,15 +53,41 @@ export function verificationMail(name: string, url: string) {
         <tr><td style="font-size:22px;font-weight:bold;letter-spacing:-0.5px">luka</td></tr>
         <tr><td style="padding-top:24px;font-size:15px;line-height:1.6">
           <p style="margin:0 0 12px">${escapeHtml(hello)}</p>
-          <p style="margin:0 0 24px">Bienvenue sur Luka ! Clique sur le bouton ci-dessous pour activer ton compte.</p>
-          <a href="${escapeHtml(url)}" style="display:inline-block;background:#5b3df5;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px">Activer mon compte</a>
-          <p style="margin:24px 0 0;font-size:13px;color:#8b889b">Le lien est valable 24 heures. Si le bouton ne marche pas, copie ce lien dans ton navigateur :<br>
-            <a href="${escapeHtml(url)}" style="color:#5b3df5;word-break:break-all">${escapeHtml(url)}</a></p>
-          <p style="margin:16px 0 0;font-size:13px;color:#8b889b">Si tu n'as pas créé de compte sur Luka, ignore simplement cet e-mail.</p>
+          <p style="margin:0 0 24px">${escapeHtml(o.intro)}</p>
+          <a href="${url}" style="display:inline-block;background:#5b3df5;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px">${escapeHtml(o.button)}</a>
+          <p style="margin:24px 0 0;font-size:13px;color:#8b889b">Le lien est valable ${escapeHtml(o.validity)}. Si le bouton ne marche pas, copie ce lien dans ton navigateur :<br>
+            <a href="${url}" style="color:#5b3df5;word-break:break-all">${url}</a></p>
+          <p style="margin:16px 0 0;font-size:13px;color:#8b889b">${escapeHtml(o.ignore)}</p>
         </td></tr>
       </table>
     </td></tr>
   </table>
 </body></html>`;
-  return { subject: "Active ton compte Luka", html, text };
+  return { subject: o.subject, html, text };
+}
+
+/** E-mail d'activation du compte (inscription avec e-mail et mot de passe). */
+export function verificationMail(name: string, url: string) {
+  return layout({
+    name,
+    url,
+    subject: "Active ton compte Luka",
+    intro: "Bienvenue sur Luka ! Clique sur le bouton ci-dessous pour activer ton compte.",
+    button: "Activer mon compte",
+    validity: "24 heures",
+    ignore: "Si tu n'as pas créé de compte sur Luka, ignore simplement cet e-mail.",
+  });
+}
+
+/** E-mail de réinitialisation du mot de passe. */
+export function resetPasswordMail(name: string, url: string) {
+  return layout({
+    name,
+    url,
+    subject: "Réinitialise ton mot de passe Luka",
+    intro: "Tu as demandé à changer ton mot de passe Luka. Clique sur le bouton ci-dessous pour en choisir un nouveau.",
+    button: "Choisir un nouveau mot de passe",
+    validity: "1 heure",
+    ignore: "Si tu n'as rien demandé, ignore cet e-mail : ton mot de passe actuel reste valable.",
+  });
 }
