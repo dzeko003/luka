@@ -7,7 +7,7 @@ export default function Page() {
   return (
     <LegalPage
       title="Politique de confidentialité"
-      updated="17 novembre 2026"
+      updated="19 novembre 2026"
       intro={
         <p>
           Cette page explique quelles données Luka enregistre, pourquoi, avec qui elles sont partagées et comment exercer tes droits.
@@ -35,6 +35,18 @@ export default function Page() {
               <li>
                 <strong>Utilisation</strong> : le nombre de collectes et d&apos;appels au modèle d&apos;IA, pour appliquer les limites
                 de ta formule.
+              </li>
+              <li>
+                <strong>Connexions</strong> : la date, le moyen de connexion (email, Google) et le pays déduit de l&apos;adresse IP,
+                pour repérer une utilisation anormale de ton compte.
+              </li>
+              <li>
+                <strong>Visites de la page d&apos;accueil</strong> : la date, le site d&apos;où tu viens et ton pays, déduit de ton
+                adresse IP. L&apos;adresse IP elle-même n&apos;est pas conservée et aucun cookie n&apos;est déposé : seule une empreinte
+                anonyme, renouvelée chaque jour, permet de compter les visiteurs uniques.
+              </li>
+              <li>
+                <strong>Paiements</strong> : le montant, la date et le moyen de paiement des formules Premium.
               </li>
               <li>
                 <strong>Notifications</strong> : les messages que Luka t&apos;envoie dans l&apos;application (collecte terminée, etc.).
@@ -92,7 +104,8 @@ export default function Page() {
           body: (
             <p>
               Luka utilise uniquement des cookies nécessaires à la connexion (cookie de session). Aucun cookie publicitaire ni outil de
-              mesure d&apos;audience n&apos;est utilisé.
+              mesure d&apos;audience externe n&apos;est utilisé : le comptage des visites de la page d&apos;accueil est fait par Luka
+              elle-même, sans cookie.
             </p>
           ),
         },

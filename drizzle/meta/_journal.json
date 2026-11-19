@@ -29,6 +29,20 @@
       "when": 1795049342554,
       "tag": "0003_verify_existing_users",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795119651742,
+      "tag": "0004_two_factor",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795121553954,
+      "tag": "0005_stats_admin",
+      "breakpoints": true
     }
   ]
 }

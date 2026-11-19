@@ -1,3 +1,4 @@
+import { VisitBeacon } from "@/components/visit-beacon";
 /* eslint-disable @next/next/no-img-element -- photos et visuels statiques */
 import {
   ArrowRight,
@@ -622,6 +623,7 @@ export default async function Home() {
   if (await getSession()) redirect("/tableau-de-bord");
   return (
     <>
+      <VisitBeacon path="/" />
       <Hero />
       <Faits />
       <Demo />

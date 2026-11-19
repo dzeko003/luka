@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
-import { apiUser, jsonError } from "@/lib/api";
+import { apiConsoleAdmin, jsonError } from "@/lib/api";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -11,8 +11,8 @@ const body = z
 
 /** Administration : changer la formule d'un utilisateur, le suspendre ou le réactiver. */
 export async function PATCH(req: Request, { params }: Ctx) {
-  const admin = await apiUser();
-  if (!admin || admin.role !== "admin") return jsonError("Introuvable", 404);
+  const admin = await apiConsoleAdmin();
+  if (!admin) return jsonError("Introuvable", 404);
   const { id } = await params;
   const parsed = body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return jsonError("Requête invalide");
