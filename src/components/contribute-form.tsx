@@ -52,14 +52,14 @@ export function ContributeForm({ mine }: { mine: MyContribution[] }) {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
-  async function load(file: File | undefined) {
+  async function load(file: File | undefined, sheetName?: string) {
     if (!file) return;
     setError(null);
     setDone(null);
     if (file.size > 10 * 1024 * 1024) return setError("Fichier trop lourd (10 Mo maximum).");
     setReading(true);
     try {
-      const s = await readFile(file);
+      const s = await readFile(file, sheetName);
       if (s.rows.length > MAX_CONTRIBUTION_ROWS) s.rows = s.rows.slice(0, MAX_CONTRIBUTION_ROWS);
       setSheet(s);
       setMapping(initialMapping(s.headers));
@@ -159,6 +159,23 @@ export function ContributeForm({ mine }: { mine: MyContribution[] }) {
                   {sheet.rows.length.toLocaleString("fr-FR")} ligne(s) · {kept} colonne(s) retenue(s) sur {sheet.headers.length}
                 </p>
               </div>
+              {sheet.sheets && sheet.sheets.length > 1 && (
+                <label className="flex items-center gap-1.5 text-xs text-muted">
+                  Onglet
+                  <select
+                    className="input w-auto py-1 text-[12.5px]"
+                    value={sheet.sheet}
+                    onChange={(e) => load(sheet.file, e.target.value)}
+                    aria-label="Onglet du classeur"
+                  >
+                    {sheet.sheets.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <button type="button" className="btn-ghost" onClick={() => input.current?.click()}>
                 Changer
               </button>

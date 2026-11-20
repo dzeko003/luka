@@ -44,7 +44,11 @@ export async function POST(req: Request) {
       });
       return rec as Record<string, string>;
     })
-    .filter((r) => (r.nom ?? "").length > 1);
+    // Un nom d'établissement est court : une phrase (légende, consigne) n'en est pas un
+    .filter((r) => {
+      const nom = (r.nom ?? "").trim();
+      return nom.length > 1 && nom.length <= 150 && !/^[•\-*]/.test(nom) && nom.split(/\s+/).length <= 15;
+    });
   if (!records.length) return jsonError("Aucune ligne n'a de nom d'établissement");
 
   const [{ n }] = await db
