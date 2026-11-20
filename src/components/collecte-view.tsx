@@ -60,6 +60,7 @@ type Collecte = {
   nextRefreshAt: string | null;
   lastRefreshAt: string | null;
   refreshing: boolean;
+  shareData: boolean;
   lastChanges: { nouveau: number; modifie: number; nonRetrouve: number } | null;
 };
 
@@ -87,11 +88,13 @@ function RefreshPanel({
   collecte,
   options,
   onChange,
+  onShare,
   onShowChanges,
 }: {
   collecte: Collecte;
   options: string[];
   onChange: (refresh: Collecte["refresh"]) => Promise<string | null>;
+  onShare: (share: boolean) => Promise<string | null>;
   onShowChanges: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -128,6 +131,20 @@ function RefreshPanel({
           )}
         </p>
         {err && <p className="mt-1 text-xs text-danger">{err}</p>}
+        <label className="mt-2 flex items-center gap-2 text-xs text-muted">
+          <input
+            type="checkbox"
+            className="size-3.5 accent-[var(--accent)]"
+            checked={collecte.shareData}
+            disabled={busy}
+            onChange={async (e) => {
+              setBusy(true);
+              setErr(await onShare(e.target.checked));
+              setBusy(false);
+            }}
+          />
+          Partager les lignes validées avec la base Luka (informations publiques d&apos;établissements uniquement)
+        </label>
       </div>
       <select
         className="input w-auto py-1.5 text-[13px]"
@@ -313,6 +330,17 @@ export function CollecteView({ id }: { id: string }) {
     return null;
   }
 
+  async function setShare(shareData: boolean) {
+    const res = await fetch(`/api/collectes/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shareData }),
+    });
+    if (!res.ok) return "Réglage impossible";
+    setCollecte((c) => c && { ...c, shareData });
+    return null;
+  }
+
   async function remove() {
     if (!collecte) return;
     const res = await fetch(`/api/collectes/${id}`, { method: "DELETE" });
@@ -428,6 +456,7 @@ export function CollecteView({ id }: { id: string }) {
           collecte={collecte}
           options={refreshOptions}
           onChange={setRefresh}
+          onShare={setShare}
           onShowChanges={() => {
             setFilter("changements");
             setPage(1);

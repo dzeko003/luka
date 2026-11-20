@@ -2,6 +2,7 @@ import { and, count, eq, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { apiUser, getOwnedCollecte, jsonError } from "@/lib/api";
+import { ingestLater } from "@/lib/kb";
 import { isFrequency, nextRefreshDate, REFRESH_LABELS, refreshRules } from "@/lib/refresh";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -49,9 +50,9 @@ export async function DELETE(_req: Request, { params }: Ctx) {
   return new Response(null, { status: 204 });
 }
 
-const patchSchema = z.object({ refresh: z.enum(["aucune", "hebdo", "mensuelle"]) });
+const patchSchema = z.union([z.object({ refresh: z.enum(["aucune", "hebdo", "mensuelle"]) }), z.object({ shareData: z.boolean() })]);
 
-/** Mise à jour automatique : jamais, chaque semaine ou chaque mois (selon la formule). */
+/** Réglages de la collecte : mise à jour automatique (selon la formule) ou partage avec la base Luka. */
 export async function PATCH(req: Request, { params }: Ctx) {
   const user = await apiUser();
   if (!user) return jsonError("Connexion requise", 401);
@@ -59,6 +60,13 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (!c) return jsonError("Collecte introuvable", 404);
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return jsonError("Données invalides");
+  if ("shareData" in parsed.data) {
+    const { shareData } = parsed.data;
+    await db.update(schema.collectes).set({ shareData }).where(eq(schema.collectes.id, c.id));
+    // Les lignes déjà validées rejoignent la base dès l'accord
+    if (shareData) ingestLater(c.id);
+    return Response.json({ shareData });
+  }
   const { refresh } = parsed.data;
 
   if (!isFrequency(refresh)) {

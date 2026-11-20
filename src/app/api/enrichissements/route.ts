@@ -19,6 +19,8 @@ const bodySchema = z.object({
   keyColumn: z.number().int().min(0),
   rows: z.array(z.array(cell)).min(1, "Le fichier ne contient aucune ligne").max(limits.maxImportRows, `${limits.maxImportRows} lignes maximum par fichier`),
   columns: z.array(columnSchema).min(1, "Choisis au moins une colonne à compléter").max(limits.maxColumns),
+  // Un fichier importé est souvent une liste privée : il n'est partagé avec la base Luka que si l'utilisateur coche la case
+  share: z.boolean().default(false),
 });
 
 const slug = (s: string) =>
@@ -35,7 +37,7 @@ export async function POST(req: Request) {
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? "Données invalides");
-  const { title, request, fileColumns, keyColumn, rows, columns } = parsed.data;
+  const { title, request, fileColumns, keyColumn, rows, columns, share } = parsed.data;
   if (keyColumn >= fileColumns.length) return jsonError("Colonne d'identification inconnue");
   if (fileColumns.length + columns.length > limits.maxColumns) return jsonError(`${limits.maxColumns} colonnes maximum au total`);
 
@@ -64,7 +66,7 @@ export async function POST(req: Request) {
 
   const [c] = await db
     .insert(schema.collectes)
-    .values({ userId: user.id, title, request, columns: [...fileDefs.map((f) => f.def), ...newDefs], maxRows, tier, kind: "enrichissement", input })
+    .values({ userId: user.id, title, request, columns: [...fileDefs.map((f) => f.def), ...newDefs], maxRows, tier, kind: "enrichissement", input, shareData: share })
     .returning({ id: schema.collectes.id });
 
   return Response.json({ id: c.id, rows: input.length, maxRows }, { status: 201 });

@@ -26,6 +26,7 @@ import {
   setProgress,
   type Value,
 } from "./engine";
+import { cityOfZone, entityToPlace, findByNames, kbKey } from "./kb";
 import { chatJson } from "./llm";
 import { notify } from "./notifications";
 
@@ -113,6 +114,26 @@ function sameName(a: string, b: string) {
   return common / Math.min(ta.size, tb.size) >= 0.6;
 }
 
+/** Base Luka : les établissements déjà connus dans la ville sont complétés sans aucune recherche. */
+async function fromKnowledgeBase(c: CollecteRecord, rows: ExtractedRow[], keyCol: string, newCols: ColumnDef[], plan: Plan) {
+  const city = cityOfZone(plan.zone);
+  const cols = newCols.filter((col) => plan.mapping[col.name]);
+  if (!city || !cols.length) return;
+  try {
+    const known = await findByNames(city, rows.map((r) => String(r.data[keyCol] ?? "")).filter(Boolean));
+    let n = 0;
+    for (const r of rows) {
+      const e = known.get(kbKey(String(r.data[keyCol] ?? ""), city));
+      if (!e) continue;
+      const { place, confidence } = entityToPlace(e);
+      if (fillFromPlace(r, place, cols, plan, `Base Luka (confirmé ${e.confirmations} fois)`, confidence)) n++;
+    }
+    if (n) await addLog(c.id, `Base Luka : ${n} ligne(s) complétée(s) avec des établissements déjà connus.`);
+  } catch (e) {
+    await addLog(c.id, `Base Luka ignorée : ${(e as Error).message}`, "warn");
+  }
+}
+
 /** Premium : une recherche Google Maps par établissement, par paquets de 50. */
 async function fromGoogleMaps(c: CollecteRecord, rows: ExtractedRow[], keyCol: string, newCols: ColumnDef[], plan: Plan, budget: Budget) {
   const cols = newCols.filter((col) => plan.mapping[col.name]);
@@ -148,7 +169,7 @@ async function fromGoogleMaps(c: CollecteRecord, rows: ExtractedRow[], keyCol: s
   await addLog(c.id, `Google Maps : ${completed} ligne(s) complétée(s).`);
 }
 
-function fillFromPlace(r: ExtractedRow, p: Place, cols: ColumnDef[], plan: Plan) {
+function fillFromPlace(r: ExtractedRow, p: Place, cols: ColumnDef[], plan: Plan, source = "Google Maps (via Apify)", confidence = 0.85) {
   let changed = false;
   for (const col of cols) {
     const v = p.fields[plan.mapping[col.name]];
@@ -163,8 +184,8 @@ function fillFromPlace(r: ExtractedRow, p: Place, cols: ColumnDef[], plan: Plan)
   };
   if (changed) {
     r.sourceUrl = p.url || r.sourceUrl;
-    r.sourceTitle = "Google Maps (via Apify)";
-    r.confidence = Math.max(r.confidence, 0.85);
+    r.sourceTitle = source;
+    r.confidence = Math.max(r.confidence, confidence);
   }
   return changed;
 }
@@ -327,6 +348,8 @@ export async function runEnrichment(c: CollecteRecord) {
     const plan = await planEnrichment(c, rows, newCols);
     await addLog(c.id, plan.zone ? `Zone : ${plan.zone}.` : "Zone non précisée : recherche sans lieu.");
     await setProgress(c.id, 8);
+    if (plan.zone) await db.update(schema.collectes).set({ zone: plan.zone }).where(eq(schema.collectes.id, c.id));
+    await fromKnowledgeBase(c, rows, keyCol, newCols, plan);
 
     if (budget && Object.keys(plan.mapping).length) await fromGoogleMaps(c, rows, keyCol, newCols, plan, budget);
     else if (c.tier === "premium" && !budget) await addLog(c.id, "Google Maps indisponible (APIFY_TOKEN manquant) : sources gratuites uniquement.", "warn");

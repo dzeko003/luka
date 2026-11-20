@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { AccountSettings } from "@/components/account-settings";
+import { eq } from "drizzle-orm";
+import { db, schema } from "@/db";
 import { auth, googleEnabled, requireUser } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "Mon compte" };
@@ -10,6 +12,7 @@ export default async function Page({ searchParams }: PageProps<"/compte">) {
   const h = await headers();
   const [accounts, sessions, sp] = await Promise.all([auth.api.listUserAccounts({ headers: h }), auth.api.listSessions({ headers: h }), searchParams]);
   const providers = accounts.map((a) => a.providerId);
+  const [{ shareData }] = await db.select({ shareData: schema.user.shareData }).from(schema.user).where(eq(schema.user.id, user.id));
   const google = accounts.find((a) => a.providerId === "google");
   return (
     <AccountSettings
@@ -20,6 +23,7 @@ export default async function Page({ searchParams }: PageProps<"/compte">) {
       otherSessions={Math.max(0, sessions.length - 1)}
       linkError={typeof sp.error === "string" ? sp.error.slice(0, 80) : undefined}
       linked={sp.google === "relie"}
+      shareData={shareData}
     />
   );
 }

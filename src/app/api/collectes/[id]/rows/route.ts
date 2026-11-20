@@ -2,6 +2,7 @@ import { asc, count } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { apiUser, getOwnedCollecte, jsonError } from "@/lib/api";
+import { ingestLater } from "@/lib/kb";
 import { ROW_STATUSES, rowsWhere } from "@/lib/rows-query";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -52,5 +53,6 @@ export async function PATCH(req: Request, { params }: Ctx) {
     .set({ status })
     .where(rowsWhere(c.id, { status: filtre.statut, q: filtre.q }))
     .returning({ id: schema.rows.id });
+  if (status === "valide" && updated.length) ingestLater(c.id, updated.map((r) => r.id));
   return Response.json({ updated: updated.length });
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, KeyRound, LogOut, Mail, ShieldAlert, User } from "lucide-react";
+import { Check, Database, KeyRound, LogOut, Mail, ShieldAlert, User } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
@@ -15,6 +16,8 @@ type Props = {
   /** Code d'erreur renvoyé par Google après une liaison ratée. */
   linkError?: string;
   linked?: boolean;
+  /** Partage des lignes validées avec la base Luka (réglage des prochaines collectes). */
+  shareData: boolean;
 };
 
 type Status = { ok: boolean; text: string } | null;
@@ -52,6 +55,48 @@ function linkErrorMessage(code: string) {
   }
   if (c.includes("access_denied")) return "Liaison avec Google annulée.";
   return "La liaison avec Google a échoué. Réessaie.";
+}
+
+/** Accord pour partager les lignes validées avec la base Luka. */
+function ShareSection({ initial }: { initial: boolean }) {
+  const [share, setShare] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<Status>(null);
+  async function toggle(next: boolean) {
+    setBusy(true);
+    setStatus(null);
+    const res = await fetch("/api/compte/partage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shareData: next }),
+    });
+    setBusy(false);
+    if (!res.ok) return setStatus({ ok: false, text: "Le réglage n'a pas pu être enregistré." });
+    setShare(next);
+    setStatus({ ok: true, text: next ? "Tes prochaines collectes partageront leurs lignes validées." : "Plus aucune de tes collectes n'est partagée." });
+  }
+  return (
+    <Section
+      icon={Database}
+      title="Base Luka"
+      desc="Les informations publiques d'établissements que tu valides (nom, téléphone, adresse, site…) rejoignent la base commune de Luka et rendent les collectes de tous plus rapides et plus fiables. Jamais de données sur des personnes, ni tes fichiers importés sans ton accord."
+    >
+      <label className="flex items-start gap-2.5 text-[13.5px]">
+        <input type="checkbox" className="mt-0.5 size-4 accent-[var(--accent)]" checked={share} disabled={busy} onChange={(e) => toggle(e.target.checked)} />
+        <span>
+          Partager les lignes que je valide avec la base Luka
+          <span className="block text-[12px] text-muted">
+            Modifiable aussi collecte par collecte. Désactiver arrête le partage de toutes tes collectes. Détails dans la{" "}
+            <Link href="/confidentialite" className="underline underline-offset-2">
+              politique de confidentialité
+            </Link>
+            .
+          </span>
+        </span>
+      </label>
+      <Feedback status={status} />
+    </Section>
+  );
 }
 
 export function AccountSettings(p: Props) {
@@ -284,6 +329,8 @@ export function AccountSettings(p: Props) {
           <Feedback status={googleStatus} />
         </Section>
       )}
+
+      <ShareSection initial={p.shareData} />
 
       <Section
         icon={LogOut}

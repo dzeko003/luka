@@ -9,7 +9,7 @@ export default function Page() {
   return (
     <LegalPage
       title="Conditions d'utilisation"
-      updated="17 novembre 2026"
+      updated="20 novembre 2026"
       intro={
         <p>
           Ces conditions encadrent l&apos;utilisation de Luka, un service en ligne qui aide à collecter des données publiques sur le
@@ -108,6 +108,25 @@ export default function Page() {
                 nécessaire.
               </p>
               <p>Le nom Luka, l&apos;interface et le code du service restent notre propriété.</p>
+            </>
+          ),
+        },
+        {
+          id: "base",
+          title: "Base Luka et contributions",
+          body: (
+            <>
+              <p>
+                Sauf si tu le désactives (Mon compte, ou sur chaque collecte), les informations publiques d&apos;établissements contenues
+                dans les lignes que tu valides rejoignent la base commune de Luka et peuvent être proposées aux autres utilisateurs. Un
+                fichier importé pour être complété n&apos;est partagé que si tu le demandes explicitement.
+              </p>
+              <p>
+                En envoyant une contribution, tu garantis que les données sont publiques ou que tu as le droit de les partager, qu&apos;elles
+                ne concernent pas des personnes privées, et tu autorises Luka à les vérifier, les corriger, les combiner avec d&apos;autres
+                sources et les mettre à disposition de ses utilisateurs, sans contrepartie. Luka peut refuser ou retirer une contribution
+                à tout moment.
+              </p>
             </>
           ),
         },

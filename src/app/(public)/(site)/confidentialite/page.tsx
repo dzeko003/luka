@@ -7,7 +7,7 @@ export default function Page() {
   return (
     <LegalPage
       title="Politique de confidentialité"
-      updated="19 novembre 2026"
+      updated="20 novembre 2026"
       intro={
         <p>
           Cette page explique quelles données Luka enregistre, pourquoi, avec qui elles sont partagées et comment exercer tes droits.
@@ -49,6 +49,10 @@ export default function Page() {
                 <strong>Paiements</strong> : le montant, la date et le moyen de paiement des formules Premium.
               </li>
               <li>
+                <strong>Contributions</strong> : les fichiers d&apos;établissements que tu choisis d&apos;envoyer pour enrichir la base
+                Luka, avec leur titre, leur origine indiquée et la décision de l&apos;équipe.
+              </li>
+              <li>
                 <strong>Notifications</strong> : les messages que Luka t&apos;envoie dans l&apos;application (collecte terminée, etc.).
               </li>
             </ul>
@@ -64,6 +68,40 @@ export default function Page() {
               <li>appliquer les limites de ta formule et prévenir les abus ;</li>
               <li>t&apos;informer de l&apos;avancement de tes collectes.</li>
             </ul>
+          ),
+        },
+        {
+          id: "base",
+          title: "Base Luka : réutilisation des données d'établissements",
+          body: (
+            <>
+              <p>
+                Luka constitue une base commune d&apos;établissements (commerces, entreprises, écoles, services…) pour que les collectes de
+                chacun soient plus rapides et plus fiables. Elle est alimentée de deux façons :
+              </p>
+              <ul>
+                <li>
+                  <strong>Les lignes que tu valides</strong>, si tu l&apos;acceptes. Ce partage est activé par défaut pour les nouvelles
+                  collectes ; tu peux le désactiver à tout moment dans Mon compte, ou collecte par collecte. Un fichier que tu importes pour
+                  le compléter n&apos;est jamais partagé sans que tu coches la case prévue.
+                </li>
+                <li>
+                  <strong>Les contributions</strong> : les fichiers que tu envoies volontairement depuis la page Contribuer, vérifiés par
+                  l&apos;équipe Luka avant d&apos;être ajoutés.
+                </li>
+              </ul>
+              <p>
+                Seules des informations publiques d&apos;établissements y entrent : nom, catégorie, adresse, téléphone, site web, e-mail
+                de contact, réseaux sociaux, horaires. Les colonnes qui décrivent une personne (nom d&apos;un responsable, données
+                personnelles) sont écartées, de même que les informations issues de Google Maps. La base ne garde ni ton nom ni le titre de ta collecte : seulement les informations et le
+                nombre de fois où elles ont été confirmées. Ces informations peuvent apparaître dans les résultats des autres
+                utilisateurs, avec la mention « Base Luka ».
+              </p>
+              <p>
+                Un établissement ou une personne qui souhaite faire retirer ou corriger une information peut nous écrire à <Contact /> :
+                la fiche est corrigée ou supprimée.
+              </p>
+            </>
           ),
         },
         {
@@ -114,8 +152,9 @@ export default function Page() {
           title: "Durée de conservation",
           body: (
             <p>
-              Tes données sont conservées tant que ton compte existe. Quand ton compte est supprimé, tes collectes, tes résultats et
-              tes notifications sont supprimés avec lui.
+              Tes données sont conservées tant que ton compte existe. Quand ton compte est supprimé, tes collectes, tes résultats,
+              tes contributions et tes notifications sont supprimés avec lui. Les informations d&apos;établissements déjà versées dans
+              la base Luka y restent, car elles ne sont plus liées à ton compte ; tu peux demander leur retrait à <Contact />.
             </p>
           ),
         },
