@@ -1,10 +1,10 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import type { Metadata } from "next";
 import { ContributionReview } from "@/components/admin/contribution-review";
 import { PageTitle } from "@/components/admin/ui";
 import { db, schema } from "@/db";
 import { requireConsoleAdmin } from "@/lib/auth";
-import { findByNames, kbKey } from "@/lib/kb";
+import { kbKey } from "@/lib/kb";
 
 export const metadata: Metadata = { title: "Contributions" };
 
@@ -26,8 +26,11 @@ export default async function Page() {
       const preview = x.rows.slice(0, PREVIEW);
       let known = 0;
       if (x.status === "pending") {
-        const found = await findByNames(x.city, preview.map((r) => r.nom ?? ""));
-        known = preview.filter((r) => found.has(kbKey(r.nom ?? "", r.ville || x.city))).length;
+        // Chaque ligne est cherchée avec sa propre ville (ou celle de la contribution si elle n'en a pas)
+        const keys = preview.filter((r) => r.nom && (r.ville || x.city)).map((r) => kbKey(r.nom, r.ville || x.city));
+        known = keys.length
+          ? (await db.select({ key: schema.kbEntities.key }).from(schema.kbEntities).where(inArray(schema.kbEntities.key, keys))).length
+          : 0;
       }
       return {
         id: x.id,

@@ -16,9 +16,10 @@ const MAX_PENDING = 5;
 const cell = z.union([z.string(), z.number(), z.boolean(), z.null()]).transform((v) => (v === null ? "" : String(v).trim().slice(0, 500)));
 
 const bodySchema = z.object({
-  title: z.string().trim().min(3, "Donne un titre à ta contribution").max(120),
-  description: z.string().trim().min(10, "Dis en une phrase ce que contient le fichier et d'où viennent les données").max(1000),
-  city: z.string().trim().min(2, "Indique la ville concernée").max(80),
+  title: z.string().trim().min(1, "Donne un titre à ta contribution").max(120),
+  // Facultatifs : l'origine aide à la vérification ; la ville ne sert qu'aux lignes qui n'en ont pas
+  description: z.string().trim().max(1000).default(""),
+  city: z.string().trim().max(80).default(""),
   category: z.string().trim().max(80).optional(),
   fileName: z.string().trim().min(1).max(200),
   headers: z.array(z.string().max(200)).min(1).max(80),
