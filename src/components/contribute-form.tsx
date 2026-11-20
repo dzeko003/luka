@@ -4,7 +4,7 @@ import { ChevronRight, FileSpreadsheet, HeartHandshake, Loader2, Upload } from "
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { guessField, KB_FIELDS, KB_LABELS, type KbField, MAX_CONTRIBUTION_ROWS } from "@/lib/kb-fields";
+import { type ColumnTarget, defaultTargets, extraKey, isPersonal, KB_FIELDS, KB_LABELS, MAX_CONTRIBUTION_ROWS } from "@/lib/kb-fields";
 import { readFile, type Sheet } from "@/lib/sheet";
 
 export type MyContribution = {
@@ -25,22 +25,11 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   rejected: { label: "Non retenue", cls: "bg-surface-2 text-muted" },
 };
 
-/** Associe chaque colonne du fichier à un champ de la base (deviné, modifiable), sans doublon. */
-function initialMapping(headers: string[]) {
-  const used = new Set<KbField>();
-  return headers.map((h) => {
-    const f = guessField(h);
-    if (!f || used.has(f)) return null;
-    used.add(f);
-    return f;
-  });
-}
-
 export function ContributeForm({ mine }: { mine: MyContribution[] }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const [sheet, setSheet] = useState<Sheet | null>(null);
-  const [mapping, setMapping] = useState<(KbField | null)[]>([]);
+  const [mapping, setMapping] = useState<ColumnTarget[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [city, setCity] = useState("");
@@ -62,7 +51,7 @@ export function ContributeForm({ mine }: { mine: MyContribution[] }) {
       const s = await readFile(file, sheetName);
       if (s.rows.length > MAX_CONTRIBUTION_ROWS) s.rows = s.rows.slice(0, MAX_CONTRIBUTION_ROWS);
       setSheet(s);
-      setMapping(initialMapping(s.headers));
+      setMapping(defaultTargets(s.headers));
       setTitle((t) => t || s.fileName.replace(/\.[^.]+$/, ""));
     } catch (e) {
       setSheet(null);
@@ -71,12 +60,13 @@ export function ContributeForm({ mine }: { mine: MyContribution[] }) {
     setReading(false);
   }
 
-  function setField(i: number, f: KbField | null) {
+  function setField(i: number, f: ColumnTarget) {
     // Une information ne peut venir que d'une colonne : l'ancienne colonne est libérée
     setMapping((m) => m.map((x, j) => (j === i ? f : f && x === f ? null : x)));
   }
 
   const kept = mapping.filter(Boolean).length;
+  const removed = sheet ? sheet.headers.length - kept : 0;
   const named = sheet ? sheet.rows.filter((r) => r[mapping.indexOf("nom")]?.trim()).length : 0;
 
   async function submit(e: React.FormEvent) {
@@ -88,7 +78,7 @@ export function ContributeForm({ mine }: { mine: MyContribution[] }) {
     const res = await fetch("/api/contributions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, description, city, category, fileName: sheet.fileName, mapping, rows: sheet.rows, consent }),
+      body: JSON.stringify({ title, description, city, category, fileName: sheet.fileName, headers: sheet.headers, mapping, rows: sheet.rows, consent }),
     });
     const json = await res.json().catch(() => ({}));
     setSubmitting(false);
@@ -156,7 +146,7 @@ export function ContributeForm({ mine }: { mine: MyContribution[] }) {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13.5px] font-medium">{sheet.fileName}</p>
                 <p className="text-xs text-muted">
-                  {sheet.rows.length.toLocaleString("fr-FR")} ligne(s) · {kept} colonne(s) retenue(s) sur {sheet.headers.length}
+                  {sheet.rows.length.toLocaleString("fr-FR")} ligne(s) · {kept} colonne(s) gardée(s){removed > 0 && `, ${removed} retirée(s)`}
                 </p>
               </div>
               {sheet.sheets && sheet.sheets.length > 1 && (
@@ -184,31 +174,43 @@ export function ContributeForm({ mine }: { mine: MyContribution[] }) {
             <div>
               <p className="label">Ce que contient chaque colonne</p>
               <p className="mb-2 text-xs text-muted">
-                Luka a deviné ; corrige si besoin. Les colonnes « Ignorer » ne sont pas envoyées : ignore toute colonne qui parle d&apos;une personne
-                (nom d&apos;un responsable, numéro personnel…).
+                Toutes les lignes et toutes les colonnes sont gardées, sauf les colonnes « Retirer ». Les colonnes sensibles (qui parlent d&apos;une
+                personne : gérant, responsable, numéro ou e-mail personnel, auteur de la saisie…) sont retirées d&apos;office. Retire aussi toute
+                autre colonne que tu ne veux pas partager.
               </p>
               <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full text-left text-[12.5px]">
                   <thead className="bg-surface-2 text-muted">
                     <tr>
-                      {sheet.headers.map((h, i) => (
-                        <th key={i} className="min-w-[150px] px-2 py-2 align-top font-medium">
-                          <span className="mb-1 block truncate px-1">{h}</span>
-                          <select
-                            className="input py-1 text-[12px]"
-                            value={mapping[i] ?? ""}
-                            aria-label={`Information de la colonne ${h}`}
-                            onChange={(e) => setField(i, (e.target.value || null) as KbField | null)}
-                          >
-                            <option value="">Ignorer</option>
-                            {KB_FIELDS.map((f) => (
-                              <option key={f} value={f}>
-                                {KB_LABELS[f]}
-                              </option>
-                            ))}
-                          </select>
-                        </th>
-                      ))}
+                      {sheet.headers.map((h, i) => {
+                        const sensitive = isPersonal(h);
+                        return (
+                          <th key={i} className="min-w-[160px] px-2 py-2 align-top font-medium">
+                            <span className="mb-1 flex items-center gap-1.5 px-1">
+                              <span className="truncate">{h}</span>
+                              {sensitive && <span className="shrink-0 rounded bg-danger-soft px-1 text-[10px] font-semibold text-danger">Sensible</span>}
+                            </span>
+                            <select
+                              className="input py-1 text-[12px]"
+                              value={mapping[i] ?? ""}
+                              disabled={sensitive}
+                              title={sensitive ? "Colonne sensible : toujours retirée" : undefined}
+                              aria-label={`Information de la colonne ${h}`}
+                              onChange={(e) => setField(i, e.target.value || null)}
+                            >
+                              <option value="">Retirer</option>
+                              <option value={extraKey(h)}>Garder telle quelle</option>
+                              <optgroup label="Ranger comme…">
+                                {KB_FIELDS.map((f) => (
+                                  <option key={f} value={f}>
+                                    {KB_LABELS[f]}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            </select>
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody>

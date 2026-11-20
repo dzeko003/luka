@@ -3,7 +3,7 @@
 import { Check, ChevronRight, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { KB_FIELDS, KB_LABELS } from "@/lib/kb-fields";
+import { fieldLabel, KB_FIELDS } from "@/lib/kb-fields";
 import { dateTime, int } from "./format";
 import { alertCls, Badge, btnDanger, btnSuccess, field } from "./ui";
 
@@ -37,7 +37,9 @@ function Item({ c }: { c: AdminContribution }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const cols = KB_FIELDS.filter((f) => c.preview.some((r) => r[f]));
+  // Champs connus d'abord, puis les colonnes gardées telles quelles
+  const extras = [...new Set(c.preview.flatMap((r) => Object.keys(r)))].filter((k) => !(KB_FIELDS as readonly string[]).includes(k));
+  const cols = [...KB_FIELDS.filter((f) => c.preview.some((r) => r[f])), ...extras];
   const s = STATUS[c.status as keyof typeof STATUS] ?? { label: c.status, tone: "neutral" as const };
 
   async function act(action: "approve" | "reject") {
@@ -83,7 +85,7 @@ function Item({ c }: { c: AdminContribution }) {
                 <tr>
                   {cols.map((f) => (
                     <th key={f} className="px-2.5 py-1.5 font-medium whitespace-nowrap">
-                      {KB_LABELS[f]}
+                      {fieldLabel(f)}
                     </th>
                   ))}
                 </tr>

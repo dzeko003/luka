@@ -74,7 +74,11 @@ export const norm = (v: unknown) =>
     .trim();
 
 /** Colonnes qui décrivent une personne : jamais versées dans la base. */
-export const PERSONAL = /\b(prenoms?|directeur|directrice|gerante?|responsable|proprietaire|promoteur|personne|contact perso|age|naissance|cni|passeport|salaire|sexe|genre|domicile)\b/;
+export const PERSONAL =
+  /\b(prenoms?|directeur|directrice|gerante?|responsable|proprietaire|promoteur|personne|contact perso|telephone perso|email perso|ajoute par|saisi par|auteur|enqueteur|age|naissance|cni|passeport|salaire|sexe|genre|domicile)\b/;
+
+/** Colonne sensible : elle parle d'une personne (nom, numéro ou e-mail personnel, auteur de la saisie…). */
+export const isPersonal = (label: string) => PERSONAL.test(` ${norm(label)} `);
 
 /** Devine le champ de la base d'après le libellé d'une colonne (fichier importé, colonne sans champ de lieu). */
 export function guessField(label: string): KbField | null {
@@ -113,3 +117,34 @@ export const cityOfZone = (zone: string | null | undefined) => zone?.split(",")[
 
 export const kbKey = (name: string, city: string) => `${norm(name)}|${norm(city)}`;
 
+
+/** Colonne gardée telle quelle, sous son propre nom (information sans champ dédié dans la base). */
+export const EXTRA_PREFIX = "autre:";
+export const extraKey = (header: string) =>
+  EXTRA_PREFIX +
+  (norm(header)
+    .replace(/ /g, "_")
+    .slice(0, 40) || "colonne");
+export const isExtraKey = (k: unknown): k is string => typeof k === "string" && /^autre:[a-z0-9_]{1,40}$/.test(k);
+
+/** Ce que devient une colonne d'un fichier : un champ de la base, une information gardée telle quelle, ou retirée (null). */
+export type ColumnTarget = KbField | string | null;
+
+/** Libellé d'une information de la base (champ connu ou colonne gardée telle quelle). */
+export const fieldLabel = (k: string) => (isExtraKey(k) ? k.slice(EXTRA_PREFIX.length).replace(/_/g, " ") : (KB_LABELS[k as KbField] ?? k));
+
+/**
+ * Proposition par défaut : les colonnes sensibles sont retirées, les colonnes reconnues vont dans leur champ
+ * (une seule colonne par champ), toutes les autres sont gardées telles quelles.
+ */
+export function defaultTargets(headers: string[]): ColumnTarget[] {
+  const used = new Set<string>();
+  return headers.map((h) => {
+    if (isPersonal(h)) return null;
+    const f = guessField(h);
+    const target = f && !used.has(f) ? f : extraKey(h);
+    if (used.has(target)) return null;
+    used.add(target);
+    return target;
+  });
+}
