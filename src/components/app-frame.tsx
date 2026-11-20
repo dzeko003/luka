@@ -43,7 +43,7 @@ const ICONS: Record<Template["icon"], typeof MapPin> = {
 };
 
 type Props = {
-  user: { name: string; email: string; premium?: boolean; admin?: boolean };
+  user: { name: string; email: string; image?: string | null; premium?: boolean; admin?: boolean };
   quota: { used: number; limit: number; premium?: boolean };
   children: React.ReactNode;
 };
@@ -79,9 +79,14 @@ function AccountSwitcher({ user }: { user: Props["user"] }) {
         aria-expanded={open}
         aria-label="Menu du compte"
       >
-        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-[12px] font-semibold text-accent-text">
-          {initials || "?"}
-        </span>
+        {user.image ? (
+          // eslint-disable-next-line @next/next/no-img-element -- photo Google, affichée telle quelle
+          <img src={user.image} alt="" width={32} height={32} referrerPolicy="no-referrer" className="size-8 shrink-0 rounded-full object-cover" />
+        ) : (
+          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-[12px] font-semibold text-accent-text">
+            {initials || "?"}
+          </span>
+        )}
         <span className="min-w-0 flex-1 leading-tight">
           <span className="block truncate text-[13px] font-semibold">{user.name}</span>
           <span className="block text-[12px] text-muted">{user.premium ? "Premium" : "Gratuit"}</span>

@@ -156,7 +156,7 @@ export function AdminUsers({ users, currentAdminId }: { users: AdminUserRow[]; c
                   <tr key={u.id} className="border-b border-border last:border-0 hover:bg-surface-2/60">
                     <td className="px-3 py-2">
                       <Link href={`/admin/utilisateurs/${u.id}`} className="group flex items-center gap-2.5">
-                        <Avatar name={u.name || u.email} />
+                        <Avatar name={u.name || u.email} image={u.image} />
                         <span className="max-w-[180px] truncate font-medium group-hover:underline group-hover:underline-offset-2">{u.name}</span>
                         {u.role === "admin" && <Badge>admin</Badge>}
                       </Link>

@@ -6,6 +6,7 @@ import { captcha, twoFactor } from "better-auth/plugins";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { db, schema } from "@/db";
+import { syncGoogleAvatar } from "./avatar";
 import { eq } from "drizzle-orm";
 import { clientIp, countryOf } from "./geo";
 import { deleteAccountMail, mailEnabled, resetPasswordMail, sendMail, verificationMail } from "./mailer";
@@ -115,6 +116,7 @@ export const auth = betterAuth({
       // Journal des connexions. Ce crochet passe avant celui du plugin twoFactor : une connexion par mot de passe
       // d'un compte protégé n'est comptée qu'après le code. L'activation (déjà connecté) n'est pas une connexion.
       const method = loginMethod(ctx.path);
+      if (method === "google") await syncGoogleAvatar(created.user.id).catch((e) => console.error(`[avatar] ${(e as Error).message}`));
       if (!method || ctx.context.session) return;
       if (method === "email" && (created.user as { twoFactorEnabled?: boolean }).twoFactorEnabled) return;
       await db

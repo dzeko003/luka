@@ -37,7 +37,7 @@ export default async function Page({ params }: PageProps<"/admin/utilisateurs/[i
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Avatar name={user.name || user.email} size={44} />
+          <Avatar name={user.name || user.email} image={user.image} size={44} />
           <div className="min-w-0">
             <h1 className="flex flex-wrap items-center gap-2 text-[20px] font-semibold tracking-[-0.02em]">
               {user.name}
