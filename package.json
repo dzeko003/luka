@@ -15,12 +15,13 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@sentry/nextjs": "^11.15.0",
     "better-auth": "^1.7.25",
     "drizzle-orm": "^0.45.4",
     "geoip-country": "^5.0.202611040312",
     "lucide-react": "1.64.0",
     "next": "16.4.6",
-    "nodemailer": "^8.0.11",
+    "nodemailer": "^10.6.1",
     "postgres": "^4.1.1",
     "qrcode": "^1.5.4",
     "react": "19.3.0",
@@ -31,7 +32,6 @@
   "devDependencies": {
     "@tailwindcss/turbopack": "4.3.3",
     "@types/node": "^20",
-    "@types/nodemailer": "^8.0.2",
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
