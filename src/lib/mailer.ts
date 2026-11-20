@@ -15,7 +15,7 @@ const smtp = {
 export const mailEnabled = Boolean(smtp.host);
 const isDev = process.env.NODE_ENV !== "production";
 
-let transporter: nodemailer.Transporter | undefined;
+let transporter: ReturnType<typeof nodemailer.createTransport> | undefined;
 function transport() {
   transporter ??= nodemailer.createTransport({
     host: smtp.host,
