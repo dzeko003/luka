@@ -28,10 +28,14 @@ previous=""
 [[ ! -f .release ]] || previous=$(sed -n 's/^LUKA_VERSION=//p' .release)
 
 turnstile_key=$(sed -n 's/^NEXT_PUBLIC_TURNSTILE_SITE_KEY=//p' web.env)
+# La clé d'envoi Sentry (DSN) ne permet que d'envoyer des erreurs : elle peut figurer dans le code du navigateur
+sentry_dsn=$(sed -n 's/^SENTRY_DSN=//p' web.env)
 
 echo "==> Construction des images $version"
 docker build --quiet --target runner -t "luka-web:$version" \
-    --build-arg "NEXT_PUBLIC_TURNSTILE_SITE_KEY=$turnstile_key" src >/dev/null
+    --build-arg "NEXT_PUBLIC_TURNSTILE_SITE_KEY=$turnstile_key" \
+    --build-arg "NEXT_PUBLIC_SENTRY_DSN=$sentry_dsn" \
+    --build-arg "NEXT_PUBLIC_LUKA_VERSION=$version" src >/dev/null
 docker build --quiet --target migrator -t "luka-migrate:$version" src >/dev/null
 
 write_release "$version"
