@@ -11,7 +11,7 @@ export type ChatMessage = { role: "system" | "user" | "assistant"; content: stri
 export type LlmContext = {
   userId?: string;
   collecteId?: string;
-  purpose: "plan" | "extract" | "suggest";
+  purpose: "plan" | "extract" | "suggest" | "enrich";
 };
 
 export class LlmError extends Error {

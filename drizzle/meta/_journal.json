@@ -43,6 +43,13 @@
       "when": 1795121553954,
       "tag": "0005_stats_admin",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795154658245,
+      "tag": "0006_enrichissement",
+      "breakpoints": true
     }
   ]
 }

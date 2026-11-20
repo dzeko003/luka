@@ -9,6 +9,7 @@ import {
   ChevronUp,
   GraduationCap,
   Hospital,
+  FileSpreadsheet,
   House,
   Landmark,
   LifeBuoy,
@@ -152,7 +153,7 @@ function Sidebar({ user, quota, onNavigate }: Omit<Props, "children"> & { onNavi
   const pathname = usePathname();
   const [templatesOpen, setTemplatesOpen] = useState(true);
   const left = Math.max(0, quota.limit - quota.used);
-  const onCollectes = pathname === "/tableau-de-bord" || (pathname.startsWith("/collectes/") && pathname !== "/collectes/nouvelle");
+  const onCollectes = pathname === "/tableau-de-bord" || (pathname.startsWith("/collectes/") && pathname !== "/collectes/nouvelle" && pathname !== "/collectes/enrichir");
   const active = "bg-surface-2";
 
   return (
@@ -182,6 +183,13 @@ function Sidebar({ user, quota, onNavigate }: Omit<Props, "children"> & { onNavi
           className={`${navItem} ${pathname === "/collectes/nouvelle" ? active : ""}`}
         >
           <Plus className="size-4" /> Nouvelle collecte
+        </Link>
+        <Link
+          href="/collectes/enrichir"
+          onClick={onNavigate}
+          className={`${navItem} ${pathname === "/collectes/enrichir" ? active : ""}`}
+        >
+          <FileSpreadsheet className="size-4" /> Compléter un fichier
         </Link>
 
         <button

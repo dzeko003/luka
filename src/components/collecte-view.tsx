@@ -23,7 +23,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { StatCard } from "./stat-card";
 import { StatusBadge } from "./status-badge";
 
-type Col = { name: string; label: string; type: string };
+type Col = { name: string; label: string; type: string; fromFile?: boolean };
 type Row = {
   id: string;
   data: Record<string, string | number | boolean | null>;
@@ -43,6 +43,7 @@ type Collecte = {
   title: string;
   request: string;
   columns: Col[];
+  kind?: string;
   status: string;
   progress: number;
   error: string | null;
@@ -218,6 +219,8 @@ export function CollecteView({ id }: { id: string }) {
     );
 
   const lastLog = collecte.log.at(-1);
+  // Enrichissement : les colonnes ajoutées par Luka sont distinguées de celles du fichier
+  const enrich = collecte.kind === "enrichissement";
   const visible = data?.rows ?? [];
   const matching = data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(matching / size));
@@ -392,7 +395,14 @@ export function CollecteView({ id }: { id: string }) {
                 <thead className="sticky top-0 z-10 bg-surface-2 text-left text-xs text-muted">
                   <tr>
                     {collecte.columns.map((c) => (
-                      <th key={c.name} className="px-4 py-2.5 font-medium first:pl-5">{c.label}</th>
+                      <th
+                        key={c.name}
+                        title={enrich ? (c.fromFile ? "Colonne de ton fichier" : "Ajoutée par Luka") : undefined}
+                        className={`px-4 py-2.5 font-medium first:pl-5 ${enrich && !c.fromFile ? "text-accent" : ""}`}
+                      >
+                        {c.label}
+                        {enrich && !c.fromFile && <span className="ml-1 text-[10px] font-semibold">+</span>}
+                      </th>
                     ))}
                     <th className="px-4 py-2.5 font-medium">Source</th>
                     <th className="px-4 py-2.5 font-medium">Confiance</th>
