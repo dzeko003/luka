@@ -67,6 +67,10 @@ export function ContributeForm({ mine }: { mine: MyContribution[] }) {
 
   const kept = mapping.filter(Boolean).length;
   const removed = sheet ? sheet.headers.length - kept : 0;
+  // Lignes avec un nom mais sans ville dans le fichier : la ville saisie sert pour elles
+  const nameCol = mapping.indexOf("nom");
+  const cityCol = mapping.indexOf("ville");
+  const withoutCity = sheet && nameCol >= 0 ? sheet.rows.filter((r) => r[nameCol]?.trim() && !(cityCol >= 0 && r[cityCol]?.trim())).length : 0;
   const named = sheet ? sheet.rows.filter((r) => r[mapping.indexOf("nom")]?.trim()).length : 0;
 
   async function submit(e: React.FormEvent) {
@@ -78,7 +82,7 @@ export function ContributeForm({ mine }: { mine: MyContribution[] }) {
     const res = await fetch("/api/contributions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, description, city, category, fileName: sheet.fileName, headers: sheet.headers, mapping, rows: sheet.rows, consent }),
+      body: JSON.stringify({ title: title.trim() || sheet.fileName.replace(/\.[^.]+$/, ""), description, city, category, fileName: sheet.fileName, headers: sheet.headers, mapping, rows: sheet.rows, consent }),
     });
     const json = await res.json().catch(() => ({}));
     setSubmitting(false);
@@ -234,33 +238,31 @@ export function ContributeForm({ mine }: { mine: MyContribution[] }) {
                 <label className="label" htmlFor="c-title">
                   Titre
                 </label>
-                <input id="c-title" className="input" value={title} onChange={(e) => setTitle(e.target.value)} required minLength={3} maxLength={120} />
+                <input id="c-title" className="input" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} />
               </div>
-              <div>
-                <label className="label" htmlFor="c-city">
-                  Ville
-                </label>
-                <input
-                  id="c-city"
-                  className="input"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  placeholder="Ex. : Brazzaville"
-                  required
-                  minLength={2}
-                  maxLength={80}
-                />
-                <p className="mt-1 text-xs text-muted">Utilisée pour les lignes sans colonne « Ville ».</p>
-              </div>
-              <div>
-                <label className="label" htmlFor="c-cat">
-                  Type d&apos;établissements <span className="font-normal text-muted">(facultatif)</span>
-                </label>
-                <input id="c-cat" className="input" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Ex. : Pharmacie" maxLength={80} />
-              </div>
+              {/* Ville et type ne servent qu'aux lignes qui n'en ont pas : masqués quand le fichier les contient déjà */}
+              {withoutCity > 0 && (
+                <div>
+                  <label className="label" htmlFor="c-city">
+                    Ville <span className="font-normal text-muted">(facultatif)</span>
+                  </label>
+                  <input id="c-city" className="input" value={city} onChange={(e) => setCity(e.target.value)} placeholder="Ex. : Brazzaville" maxLength={80} />
+                  <p className="mt-1 text-xs text-muted">
+                    {withoutCity.toLocaleString("fr-FR")} ligne(s) n&apos;ont pas de ville : sans elle, ces lignes ne seront pas ajoutées.
+                  </p>
+                </div>
+              )}
+              {!mapping.includes("categorie") && (
+                <div>
+                  <label className="label" htmlFor="c-cat">
+                    Type d&apos;établissements <span className="font-normal text-muted">(facultatif)</span>
+                  </label>
+                  <input id="c-cat" className="input" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Ex. : Pharmacie" maxLength={80} />
+                </div>
+              )}
               <div>
                 <label className="label" htmlFor="c-desc">
-                  Contenu et origine des données
+                  D&apos;où viennent ces données ? <span className="font-normal text-muted">(facultatif)</span>
                 </label>
                 <input
                   id="c-desc"
@@ -268,8 +270,6 @@ export function ContributeForm({ mine }: { mine: MyContribution[] }) {
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Ex. : relevé fait sur le terrain en octobre 2026"
-                  required
-                  minLength={10}
                   maxLength={1000}
                 />
               </div>
@@ -335,7 +335,8 @@ export function ContributeForm({ mine }: { mine: MyContribution[] }) {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{m.title}</span>
                   <span className="text-xs text-muted">
-                    {m.city} · {m.rowCount.toLocaleString("fr-FR")} ligne(s) · {new Date(m.createdAt).toLocaleDateString("fr-FR")}
+                    {m.city ? `${m.city} · ` : ""}
+                    {m.rowCount.toLocaleString("fr-FR")} ligne(s) · {new Date(m.createdAt).toLocaleDateString("fr-FR")}
                     {m.status === "approved" && ` · ${m.added} ajouté(s), ${m.updated} complété(s)`}
                     {m.status === "rejected" && m.reviewNote && ` · ${m.reviewNote}`}
                   </span>

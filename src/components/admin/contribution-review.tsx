@@ -63,7 +63,8 @@ function Item({ c }: { c: AdminContribution }) {
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium">{c.title}</span>
             <span className="block truncate text-[12px] text-muted">
-              {c.userEmail} · {c.city}
+              {c.userEmail}
+              {c.city ? ` · ${c.city}` : ""}
               {c.category ? ` · ${c.category}` : ""} · {int(c.rowCount)} ligne(s)
             </span>
           </span>
@@ -72,7 +73,7 @@ function Item({ c }: { c: AdminContribution }) {
         </summary>
         <div className="space-y-3 border-t border-border bg-bg/50 px-4 py-4 pl-10 text-[13px]">
           <p className="text-muted">
-            <span className="font-medium text-text">Origine indiquée :</span> {c.description} <span className="text-[12px]">({c.fileName})</span>
+            <span className="font-medium text-text">Origine indiquée :</span> {c.description || "non indiquée"} <span className="text-[12px]">({c.fileName})</span>
           </p>
           <p className="text-[12.5px] text-muted">
             Sur les {c.preview.length} premières lignes, {c.known} établissement(s) déjà dans la base (complétés), {c.preview.length - c.known} nouveau(x).
