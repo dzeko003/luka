@@ -2,7 +2,7 @@ import { and, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import type { ColumnDef, KbValue } from "@/db/schema";
 import { placeFieldOf, type Place, type PlaceField } from "./connectors/places";
-import { cityOfZone, fold, guessField, isKbField, type KbField, kbKey, norm, PERSONAL } from "./kb-fields";
+import { cityOfZone, fold, guessField, isExtraKey, isKbField, type KbField, kbKey, norm, PERSONAL } from "./kb-fields";
 
 export { cityOfZone, guessField, KB_FIELDS, KB_LABELS, type KbField, kbKey, MAX_CONTRIBUTION_ROWS } from "./kb-fields";
 
@@ -39,7 +39,7 @@ const cityName = (raw: string) => {
 /** Au-delà de cette durée, une valeur confirmée peut être remplacée par une valeur plus récente. */
 const STALE_MS = 180 * 86_400_000;
 
-export type KbRecord = { fields: Partial<Record<KbField, string | number>>; city: string; category?: string | null; url?: string | null };
+export type KbRecord = { fields: Partial<Record<string, string | number>>; city: string; category?: string | null; url?: string | null };
 
 /**
  * Ajoute ou complète des établissements. Une valeur retrouvée est confirmée une fois de plus ; une valeur
@@ -63,7 +63,7 @@ export async function upsertEntities(records: KbRecord[], src: string): Promise<
       const key = kbKey(r.name, r.city);
       const incoming: Record<string, KbValue> = {};
       for (const [f, v] of Object.entries(r.fields)) {
-        if (!isKbField(f) || v === undefined || v === null || String(v).trim() === "") continue;
+        if (!(isKbField(f) || isExtraKey(f)) || v === undefined || v === null || String(v).trim() === "") continue;
         incoming[f] = { v: typeof v === "number" ? v : String(v).trim().slice(0, 500), n: 1, at: now, src, url: r.url ?? null };
       }
       const old = byKey.get(key);
