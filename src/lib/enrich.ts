@@ -13,6 +13,8 @@ import {
   describeColumns,
   enrichFromSocial,
   enrichFromWebsites,
+  failRefresh,
+  finishRefresh,
   type ExtractedRow,
   fold,
   keyOf,
@@ -24,6 +26,7 @@ import {
   setProgress,
   type Value,
 } from "./engine";
+import { cityOfZone, entityToPlace, findByNames, kbKey } from "./kb";
 import { chatJson } from "./llm";
 import { notify } from "./notifications";
 
@@ -76,8 +79,30 @@ async function planEnrichment(c: CollecteRecord, sample: ExtractedRow[], newCols
     const f = data.colonnes?.[col.name];
     if (!mapping[col.name] && typeof f === "string" && (PLACE_FIELDS as readonly string[]).includes(f)) mapping[col.name] = f as PlaceField;
   }
-  const zone = typeof data.zone === "string" && data.zone.trim().length > 1 ? data.zone.trim() : null;
+  // La ville guide la recherche et écarte les homonymes : si l'IA l'a omise, une question courte et dédiée
+  const zone = zoneOf(data.zone) ?? (await askZone(c, examples));
   return { zone, mapping };
+}
+
+function zoneOf(v: unknown): string | null {
+  if (v && typeof v === "object" && !Array.isArray(v)) v = Object.values(v).filter((x) => typeof x === "string").join(", ");
+  if (Array.isArray(v)) v = v[0];
+  return typeof v === "string" && v.trim().length > 1 && !/^(null|inconnu)/i.test(v.trim()) ? v.trim() : null;
+}
+
+async function askZone(c: CollecteRecord, examples: string) {
+  const { data } = await chatJson<{ zone?: unknown }>(
+    [
+      {
+        role: "system",
+        content: 'Réponds uniquement en JSON : {"zone": "Ville, Pays"}, ou {"zone": null} si aucun lieu n\'est indiqué ni évident.',
+      },
+      { role: "user", content: `Dans quelle ville (ou quel pays) se trouvent ces entités ?\nDescription : ${c.request}\nExemples :\n${examples}` },
+    ],
+    { userId: c.userId, collecteId: c.id, purpose: "plan" },
+    { maxTokens: 100 },
+  );
+  return zoneOf(data.zone);
 }
 
 /** Le nom trouvé correspond-il à celui de la ligne ? (mots en commun, accents et casse ignorés) */
@@ -87,6 +112,26 @@ function sameName(a: string, b: string) {
   if (!ta.size || !tb.size) return false;
   const common = [...ta].filter((w) => tb.has(w)).length;
   return common / Math.min(ta.size, tb.size) >= 0.6;
+}
+
+/** Base Luka : les établissements déjà connus dans la ville sont complétés sans aucune recherche. */
+async function fromKnowledgeBase(c: CollecteRecord, rows: ExtractedRow[], keyCol: string, newCols: ColumnDef[], plan: Plan) {
+  const city = cityOfZone(plan.zone);
+  const cols = newCols.filter((col) => plan.mapping[col.name]);
+  if (!city || !cols.length) return;
+  try {
+    const known = await findByNames(city, rows.map((r) => String(r.data[keyCol] ?? "")).filter(Boolean));
+    let n = 0;
+    for (const r of rows) {
+      const e = known.get(kbKey(String(r.data[keyCol] ?? ""), city));
+      if (!e) continue;
+      const { place, confidence } = entityToPlace(e);
+      if (fillFromPlace(r, place, cols, plan, `Base Luka (confirmé ${e.confirmations} fois)`, confidence)) n++;
+    }
+    if (n) await addLog(c.id, `Base Luka : ${n} ligne(s) complétée(s) avec des établissements déjà connus.`);
+  } catch (e) {
+    await addLog(c.id, `Base Luka ignorée : ${(e as Error).message}`, "warn");
+  }
 }
 
 /** Premium : une recherche Google Maps par établissement, par paquets de 50. */
@@ -124,7 +169,7 @@ async function fromGoogleMaps(c: CollecteRecord, rows: ExtractedRow[], keyCol: s
   await addLog(c.id, `Google Maps : ${completed} ligne(s) complétée(s).`);
 }
 
-function fillFromPlace(r: ExtractedRow, p: Place, cols: ColumnDef[], plan: Plan) {
+function fillFromPlace(r: ExtractedRow, p: Place, cols: ColumnDef[], plan: Plan, source = "Google Maps (via Apify)", confidence = 0.85) {
   let changed = false;
   for (const col of cols) {
     const v = p.fields[plan.mapping[col.name]];
@@ -139,8 +184,8 @@ function fillFromPlace(r: ExtractedRow, p: Place, cols: ColumnDef[], plan: Plan)
   };
   if (changed) {
     r.sourceUrl = p.url || r.sourceUrl;
-    r.sourceTitle = "Google Maps (via Apify)";
-    r.confidence = Math.max(r.confidence, 0.85);
+    r.sourceTitle = source;
+    r.confidence = Math.max(r.confidence, confidence);
   }
   return changed;
 }
@@ -303,6 +348,8 @@ export async function runEnrichment(c: CollecteRecord) {
     const plan = await planEnrichment(c, rows, newCols);
     await addLog(c.id, plan.zone ? `Zone : ${plan.zone}.` : "Zone non précisée : recherche sans lieu.");
     await setProgress(c.id, 8);
+    if (plan.zone) await db.update(schema.collectes).set({ zone: plan.zone }).where(eq(schema.collectes.id, c.id));
+    await fromKnowledgeBase(c, rows, keyCol, newCols, plan);
 
     if (budget && Object.keys(plan.mapping).length) await fromGoogleMaps(c, rows, keyCol, newCols, plan, budget);
     else if (c.tier === "premium" && !budget) await addLog(c.id, "Google Maps indisponible (APIFY_TOKEN manquant) : sources gratuites uniquement.", "warn");
@@ -323,6 +370,7 @@ export async function runEnrichment(c: CollecteRecord) {
         if (r.sourceTitle === "Rien trouvé") r.confidence = 0;
       }
     }
+    if (c.refreshing) return await finishRefresh(c, rows, budget?.spent ?? 0);
     await saveRows(c.id, rows);
 
     const filled = rows.filter((r) => newCols.some((col) => !isEmpty(r.data[col.name]))).length;
@@ -346,6 +394,7 @@ export async function runEnrichment(c: CollecteRecord) {
     await mailCollecteEnd(c, { rows: filled });
   } catch (e) {
     const message = (e as Error).message || "Erreur inconnue";
+    if (c.refreshing) return await failRefresh(c, message, budget?.spent ?? 0);
     await addLog(c.id, message, "error");
     await db
       .update(schema.collectes)

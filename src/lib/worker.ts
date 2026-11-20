@@ -3,6 +3,7 @@ import { db, schema } from "@/db";
 import type { LogEntry } from "@/db/schema";
 import { limits } from "./config";
 import { runCollecte } from "./engine";
+import { queueDueRefreshes, refreshReset } from "./refresh";
 
 /**
  * File d'attente des collectes, stockée dans PostgreSQL (aucun service en plus).
@@ -30,7 +31,7 @@ async function claimNext() {
     update collectes set status = 'running', started_at = coalesce(started_at, now()), heartbeat_at = now(),
       attempts = attempts + 1
     where id = (
-      select id from collectes where status = 'pending' order by created_at
+      select id from collectes where status = 'pending' order by refreshing, created_at
       for update skip locked limit 1
     )
     returning id`);
@@ -41,10 +42,16 @@ async function claimNext() {
 async function recoverDead() {
   const cutoff = new Date(Date.now() - DEAD_AFTER_MS);
   const dead = await db
-    .select({ id: schema.collectes.id, attempts: schema.collectes.attempts })
+    .select({ id: schema.collectes.id, attempts: schema.collectes.attempts, refreshing: schema.collectes.refreshing })
     .from(schema.collectes)
     .where(and(eq(schema.collectes.status, "running"), lt(schema.collectes.heartbeatAt, cutoff)));
   for (const c of dead) {
+    if (c.refreshing) {
+      // Mise à jour interrompue : les lignes existantes ne sont pas touchées, elle sera retentée à la prochaine échéance
+      const [full] = await db.select().from(schema.collectes).where(eq(schema.collectes.id, c.id));
+      if (full) await db.update(schema.collectes).set({ ...refreshReset(full), log: entry("Mise à jour interrompue : nouvel essai à la prochaine échéance.", "warn") }).where(eq(schema.collectes.id, c.id));
+      continue;
+    }
     if (c.attempts < MAX_ATTEMPTS) {
       await db.delete(schema.rows).where(eq(schema.rows.collecteId, c.id));
       await db
@@ -120,6 +127,7 @@ export function startWorker() {
       if (Date.now() - lastRecovery > 60_000) {
         lastRecovery = Date.now();
         await recoverDead();
+        await queueDueRefreshes();
       }
       while (!w.draining && w.running < limits.workerConcurrency) {
         const id = await claimNext();

@@ -107,6 +107,18 @@ export function collecteMail(name: string, url: string, c: { title: string; rows
   });
 }
 
+/** E-mail de mise à jour automatique : envoyé seulement quand quelque chose a changé. */
+export function refreshMail(name: string, url: string, c: { title: string; summary: string }) {
+  return layout({
+    name,
+    url,
+    subject: `Du nouveau dans ta collecte : ${c.title}`,
+    intro: `Luka a mis à jour ta collecte « ${c.title} » : ${c.summary}. Les lignes concernées sont marquées pour que tu les vérifies.`,
+    button: "Voir les changements",
+    ignore: "Tu reçois cet e-mail parce que la mise à jour automatique est activée sur cette collecte. Tu peux la désactiver depuis la collecte.",
+  });
+}
+
 /** E-mail de confirmation de la suppression du compte. */
 export function deleteAccountMail(name: string, url: string) {
   return layout({

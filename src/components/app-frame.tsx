@@ -10,6 +10,7 @@ import {
   GraduationCap,
   Hospital,
   FileSpreadsheet,
+  HeartHandshake,
   House,
   Landmark,
   LifeBuoy,
@@ -195,6 +196,9 @@ function Sidebar({ user, quota, onNavigate }: Omit<Props, "children"> & { onNavi
           className={`${navItem} ${pathname === "/collectes/enrichir" ? active : ""}`}
         >
           <FileSpreadsheet className="size-4" /> Compléter un fichier
+        </Link>
+        <Link href="/contribuer" onClick={onNavigate} className={`${navItem} ${pathname === "/contribuer" ? active : ""}`}>
+          <HeartHandshake className="size-4" /> Contribuer
         </Link>
 
         <button

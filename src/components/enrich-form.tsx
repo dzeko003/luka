@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { PLACE_CATALOG, type PlaceField } from "@/lib/connectors/places";
+import { readFile, type Sheet } from "@/lib/sheet";
 
 const MAX_COLUMNS = 25;
 const MAX_IMPORT_ROWS = 2000;
@@ -13,7 +14,6 @@ const MAX_IMPORT_ROWS = 2000;
 const QUICK: PlaceField[] = ["telephone", "whatsapp", "email", "site_web", "adresse", "quartier", "ville", "categorie", "horaires", "facebook", "instagram", "linkedin", "note", "nombre_avis"];
 
 type NewCol = { name: string; label: string; type: string; description?: string; field?: string };
-type Sheet = { fileName: string; headers: string[]; rows: string[][] };
 
 const slug = (s: string) =>
   s
@@ -22,64 +22,6 @@ const slug = (s: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_|_$/g, "");
-
-/** Lecture d'un CSV : séparateur deviné (; , ou tabulation), guillemets et retours à la ligne dans les cellules. */
-function parseCsv(text: string): string[][] {
-  text = text.replace(/^﻿/, "");
-  const firstLine = text.split("\n", 1)[0];
-  const sep = [";", ",", "\t"].map((s) => [s, firstLine.split(s).length] as const).sort((a, b) => b[1] - a[1])[0][0];
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let quoted = false;
-  const endCell = () => {
-    row.push(cell);
-    cell = "";
-  };
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (quoted) {
-      if (ch === '"' && text[i + 1] === '"') {
-        cell += '"';
-        i++;
-      } else if (ch === '"') quoted = false;
-      else cell += ch;
-    } else if (ch === '"' && !cell) quoted = true;
-    else if (ch === sep) endCell();
-    else if (ch === "\n" || ch === "\r") {
-      if (ch === "\r" && text[i + 1] === "\n") i++;
-      endCell();
-      rows.push(row);
-      row = [];
-    } else cell += ch;
-  }
-  if (cell || row.length) {
-    endCell();
-    rows.push(row);
-  }
-  return rows;
-}
-
-async function readFile(file: File): Promise<Sheet> {
-  let grid: string[][];
-  if (/\.xlsx$/i.test(file.name)) {
-    const { readSheet } = await import("read-excel-file/browser");
-    const data = await readSheet(file);
-    grid = data.map((r) => r.map((v) => (v === null || v === undefined ? "" : v instanceof Date ? v.toISOString().slice(0, 10) : String(v))));
-  } else if (/\.(csv|txt)$/i.test(file.name)) {
-    grid = parseCsv(await file.text());
-  } else {
-    throw new Error("Format non pris en charge : utilise un fichier Excel (.xlsx) ou CSV.");
-  }
-  grid = grid.map((r) => r.map((v) => v.trim())).filter((r) => r.some(Boolean));
-  if (grid.length < 2) throw new Error("Le fichier doit contenir une ligne de titres et au moins une ligne de données.");
-  const width = Math.max(...grid.slice(0, 50).map((r) => r.length));
-  // Colonnes sans titre ni valeur : ignorées
-  const keep = Array.from({ length: width }, (_, i) => i).filter((i) => grid.some((r) => r[i]));
-  const headers = keep.map((i, j) => grid[0][i] || `Colonne ${j + 1}`);
-  const rows = grid.slice(1).map((r) => keep.map((i) => r[i] ?? ""));
-  return { fileName: file.name, headers, rows };
-}
 
 /** Devine la colonne qui identifie chaque ligne (le nom), sinon la première. */
 function guessKey(headers: string[]) {
@@ -98,6 +40,7 @@ export function EnrichForm({ maxRows, premium }: { maxRows: number; premium: boo
   const [reading, setReading] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [share, setShare] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function load(file: File | undefined) {
@@ -139,7 +82,7 @@ export function EnrichForm({ maxRows, premium }: { maxRows: number; premium: boo
     const res = await fetch("/api/enrichissements", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: title.trim() || sheet.fileName, request, fileColumns: sheet.headers, keyColumn: keyCol, rows: sheet.rows, columns }),
+      body: JSON.stringify({ title: title.trim() || sheet.fileName, request, fileColumns: sheet.headers, keyColumn: keyCol, rows: sheet.rows, columns, share }),
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -174,7 +117,7 @@ export function EnrichForm({ maxRows, premium }: { maxRows: number; premium: boo
           </div>
         </div>
         <div className="space-y-4 p-5">
-          <input ref={input} type="file" accept=".xlsx,.csv,.txt" className="sr-only" onChange={(e) => load(e.target.files?.[0])} aria-label="Choisir un fichier" />
+          <input ref={input} type="file" accept=".xlsx,.csv,.txt,.json" className="sr-only" onChange={(e) => load(e.target.files?.[0])} aria-label="Choisir un fichier" />
           {!sheet ? (
             <button
               type="button"
@@ -351,6 +294,15 @@ export function EnrichForm({ maxRows, premium }: { maxRows: number; premium: boo
               {premium ? " Google Maps, la recherche web et les sites des établissements sont utilisés." : " Recherche web et sites des établissements ; Google Maps avec la formule Premium."}{" "}
               Rien n&apos;est inventé : une information introuvable reste vide.
             </p>
+            <label className="flex items-start gap-2.5 text-[13px]">
+              <input type="checkbox" className="mt-0.5 size-4 accent-[var(--accent)]" checked={share} onChange={(e) => setShare(e.target.checked)} />
+              <span>
+                Partager les lignes que je valide avec la base Luka
+                <span className="block text-xs text-muted">
+                  Seulement les informations publiques d&apos;établissements. Laisse décoché s&apos;il s&apos;agit d&apos;une liste privée (clients, prospects).
+                </span>
+              </span>
+            </label>
           </div>
         </section>
       )}

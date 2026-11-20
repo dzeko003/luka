@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { apiUser, jsonError } from "@/lib/api";
+import { ingestLater } from "@/lib/kb";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -31,11 +32,20 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (parsed.data.data) {
     const allowed = new Set(found.columns.map((c) => c.name));
     const data = { ...found.row.data };
-    for (const [k, v] of Object.entries(parsed.data.data)) if (allowed.has(k)) data[k] = v;
+    const edited = new Set(found.row.edited);
+    for (const [k, v] of Object.entries(parsed.data.data))
+      if (allowed.has(k)) {
+        data[k] = v;
+        edited.add(k);
+      }
     update.data = data;
+    // Une case corrigée à la main n'est plus jamais écrasée par une mise à jour automatique
+    update.edited = [...edited];
   }
   if (!Object.keys(update).length) return jsonError("Rien à modifier");
 
   const [row] = await db.update(schema.rows).set(update).where(eq(schema.rows.id, id)).returning();
+  // Une ligne validée (ou corrigée alors qu'elle l'était) rejoint la base Luka, si la collecte est partagée
+  if (row.status === "valide") ingestLater(row.collecteId, [row.id]);
   return Response.json({ row });
 }

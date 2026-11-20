@@ -25,6 +25,7 @@ export const user = pgTable("user", {
   credits: integer("credits").notNull().default(0), // crédits premium (V2)
   role: text("role").notNull().default("member"), // member | admin
   blocked: boolean("blocked").notNull().default(false),
+  shareData: boolean("share_data").notNull().default(true), // partage des lignes validées avec la base Luka
   twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -104,6 +105,9 @@ export type ColumnDef = {
   fromFile?: boolean; // enrichissement : colonne du fichier importé (gardée telle quelle, jamais remplie)
 };
 
+/** Bilan de la dernière mise à jour automatique. */
+export type RefreshChanges = { nouveau: number; modifie: number; nonRetrouve: number };
+
 export type LogEntry = { at: string; message: string; level?: "info" | "warn" | "error" };
 
 export const collectes = pgTable(
@@ -131,9 +135,22 @@ export const collectes = pgTable(
     costUsd: real("cost_usd").notNull().default(0), // dépense des sources payantes (Apify), en dollars
     startedAt: timestamp("started_at"),
     finishedAt: timestamp("finished_at"),
+    // Mise à jour automatique : la collecte est relancée et les changements sont marqués sur ses lignes
+    refresh: text("refresh").notNull().default("aucune"), // aucune | hebdo | mensuelle
+    nextRefreshAt: timestamp("next_refresh_at"),
+    lastRefreshAt: timestamp("last_refresh_at"),
+    refreshing: boolean("refreshing").notNull().default(false), // l'exécution en cours est une mise à jour
+    lastChanges: jsonb("last_changes").$type<RefreshChanges>(),
+    // Base Luka : les lignes validées sont partagées (si l'utilisateur l'accepte) ; zone trouvée par l'analyse de la demande
+    shareData: boolean("share_data").notNull().default(false),
+    zone: text("zone"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (t) => [index("collectes_user_idx").on(t.userId, t.createdAt), index("collectes_queue_idx").on(t.status, t.createdAt)],
+  (t) => [
+    index("collectes_user_idx").on(t.userId, t.createdAt),
+    index("collectes_queue_idx").on(t.status, t.createdAt),
+    index("collectes_refresh_idx").on(t.nextRefreshAt),
+  ],
 );
 
 export const rows = pgTable(
@@ -149,6 +166,10 @@ export const rows = pgTable(
     confidence: real("confidence"), // 0 → 1
     status: text("status").notNull().default("a_verifier"), // a_verifier | valide | rejete
     position: integer("position").notNull().default(0),
+    // Mise à jour automatique : changement constaté lors de la dernière mise à jour, et valeurs d'avant
+    change: text("change"), // nouveau | modifie | non_retrouve
+    previous: jsonb("previous").$type<Record<string, string | number | boolean | null>>(),
+    edited: jsonb("edited").$type<string[]>().notNull().default([]), // colonnes corrigées à la main : jamais écrasées
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("rows_collecte_idx").on(t.collecteId, t.position)],
@@ -235,4 +256,53 @@ export const payments = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("payments_user_idx").on(t.userId, t.createdAt), index("payments_created_idx").on(t.createdAt)],
+);
+
+/* ------------------------------------------------------------------ */
+/* Base Luka : établissements connus, réutilisés par les collectes     */
+/* ------------------------------------------------------------------ */
+
+/** Une information d'un établissement : valeur, nombre de confirmations, dernière fois vue, origine. */
+export type KbValue = { v: string | number; n: number; at: string; src: string; url?: string | null };
+
+export const kbEntities = pgTable(
+  "kb_entities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    key: text("key").notNull().unique(), // nom|ville normalisés
+    name: text("name").notNull(),
+    city: text("city").notNull(),
+    category: text("category"),
+    fields: jsonb("fields").$type<Record<string, KbValue>>().notNull().default({}),
+    confirmations: integer("confirmations").notNull().default(1), // nombre de collectes ou contributions qui l'ont confirmé
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("kb_city_idx").on(t.city)],
+);
+
+/** Fichiers envoyés par les utilisateurs pour enrichir la base, en attente de modération. */
+export const contributions = pgTable(
+  "contributions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    city: text("city").notNull(),
+    category: text("category"),
+    fileName: text("file_name").notNull(),
+    rows: jsonb("rows").$type<Record<string, string>[]>().notNull(), // déjà associées aux champs de la base
+    rowCount: integer("row_count").notNull(),
+    status: text("status").notNull().default("pending"), // pending | approved | rejected
+    reviewNote: text("review_note"),
+    reviewedBy: text("reviewed_by").references(() => user.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at"),
+    added: integer("added").notNull().default(0),
+    updated: integer("updated").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("contributions_status_idx").on(t.status, t.createdAt), index("contributions_user_idx").on(t.userId)],
 );

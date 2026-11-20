@@ -12,6 +12,8 @@ import type { SourceDocument } from "./connectors/types";
 import { chatJson } from "./llm";
 import { collecteMail, sendMail } from "./mailer";
 import { notify } from "./notifications";
+import { cityOfZone, entityToPlace, findInCity } from "./kb";
+import { mergeRefresh, refreshDone, refreshReset } from "./refresh";
 
 export type Value = string | number | boolean | null;
 export type ExtractedRow = {
@@ -129,7 +131,7 @@ async function planPlaces(c: CollecteRecord): Promise<PlacesPlan | null> {
   return zones.length && (filters.length || searches.length) ? { zones, filters, searches, mapping } : null;
 }
 
-function placeToRow(c: CollecteRecord, plan: PlacesPlan, p: Place, sourceTitle: string, confidence: number): ExtractedRow {
+export function placeToRow(c: CollecteRecord, plan: PlacesPlan, p: Place, sourceTitle: string, confidence: number): ExtractedRow {
   const data: Record<string, Value> = {};
   for (const col of c.columns) {
     const field = plan.mapping[col.name];
@@ -140,6 +142,24 @@ function placeToRow(c: CollecteRecord, plan: PlacesPlan, p: Place, sourceTitle: 
   const lon = Number(p.fields.longitude);
   const coords = Number.isFinite(lat) && Number.isFinite(lon) && (lat || lon) ? { lat, lon } : undefined;
   return { data, links, coords, sourceUrl: p.url || null, sourceTitle, confidence };
+}
+
+/** Base Luka : établissements déjà vérifiés par d'autres utilisateurs, utilisés avant toute autre source. */
+async function fromKnowledgeBase(c: CollecteRecord, plan: PlacesPlan, found: RowSet) {
+  try {
+    const terms = [...plan.searches, ...plan.filters.flatMap((f) => f.values)];
+    const known = (await Promise.all(plan.zones.slice(0, 5).map((z) => findInCity(cityOfZone(z) ?? "", terms, c.maxRows)))).flat();
+    if (!known.length) return;
+    found.add(
+      known.slice(0, c.maxRows).map((e) => {
+        const { place, confidence } = entityToPlace(e);
+        return placeToRow(c, plan, place, `Base Luka (confirmé ${e.confirmations} fois)`, confidence);
+      }),
+    );
+    await addLog(c.id, `Base Luka : ${Math.min(known.length, c.maxRows)} établissement(s) déjà connu(s) et vérifié(s).`);
+  } catch (e) {
+    await addLog(c.id, `Base Luka ignorée : ${(e as Error).message}`, "warn");
+  }
 }
 
 /** Arrondissement, quartier et rue retrouvés à partir des coordonnées GPS (gratuit, 1 lieu par seconde). */
@@ -631,6 +651,38 @@ export async function saveRows(collecteId: string, rows: ExtractedRow[]) {
   }
 }
 
+async function llmTotals(collecteId: string) {
+  const [usage] = await db
+    .select({
+      calls: sql<number>`count(*)::int`,
+      tokens: sql<number>`coalesce(sum(${schema.llmUsage.promptTokens} + ${schema.llmUsage.completionTokens}), 0)::int`,
+    })
+    .from(schema.llmUsage)
+    .where(eq(schema.llmUsage.collecteId, collecteId));
+  return usage;
+}
+
+/** Fin d'une mise à jour automatique : les lignes sont comparées aux existantes au lieu d'être remplacées. */
+export async function finishRefresh(c: CollecteRecord, rows: ExtractedRow[], spent: number) {
+  const changes = await mergeRefresh(c, rows);
+  const { summary } = await refreshDone(c, changes);
+  await addLog(c.id, `Mise à jour terminée : ${summary}.`);
+  const usage = await llmTotals(c.id);
+  await db
+    .update(schema.collectes)
+    .set({ ...refreshReset(c), lastChanges: changes, llmCalls: usage.calls, tokensUsed: usage.tokens, costUsd: c.costUsd + spent })
+    .where(eq(schema.collectes.id, c.id));
+}
+
+/** Une mise à jour en échec ne touche pas aux lignes : la collecte reste consultable et sera retentée à la prochaine échéance. */
+export async function failRefresh(c: CollecteRecord, message: string, spent: number) {
+  await addLog(c.id, `Mise à jour impossible : ${message}. Tes lignes sont inchangées ; nouvel essai à la prochaine échéance.`, "warn");
+  await db
+    .update(schema.collectes)
+    .set({ ...refreshReset(c), costUsd: c.costUsd + spent })
+    .where(eq(schema.collectes.id, c.id));
+}
+
 /** Exécute une collecte déjà réservée par la file d'attente (statut « running »), voir worker.ts. */
 export async function runCollecte(collecteId: string) {
   const [c] = await db.select().from(schema.collectes).where(eq(schema.collectes.id, collecteId));
@@ -657,7 +709,11 @@ export async function runCollecte(collecteId: string) {
       await addLog(c.id, `Analyse des lieux ignorée : ${(e as Error).message}`, "warn");
     }
     if (c.tier === "premium" && !budget) await addLog(c.id, "Google Maps indisponible (APIFY_TOKEN manquant) : sources gratuites uniquement.", "warn");
-    if (plan) await collectPlaces(c, plan, found, budget);
+    if (plan) {
+      await db.update(schema.collectes).set({ zone: plan.zones[0] }).where(eq(schema.collectes.id, c.id));
+      await fromKnowledgeBase(c, plan, found);
+      await collectPlaces(c, plan, found, budget);
+    }
     const fromPlaces = found.size;
 
     // 2. Recherche web, pour compléter ce que les sources ouvertes n'ont pas donné
@@ -719,6 +775,7 @@ export async function runCollecte(collecteId: string) {
 
     // 4. Premium : pages Facebook et comptes Instagram publics des établissements
     if (budget && plan && budget.left >= 0.05) await enrichFromSocial(c, plan, finalRows, budget);
+    if (c.refreshing) return await finishRefresh(c, finalRows, budget?.spent ?? 0);
     await saveRows(c.id, finalRows);
 
     const [usage] = await db
@@ -749,6 +806,7 @@ export async function runCollecte(collecteId: string) {
     await mailCollecteEnd(c, { rows: finalRows.length });
   } catch (e) {
     const message = (e as Error).message || "Erreur inconnue";
+    if (c.refreshing) return await failRefresh(c, message, budget?.spent ?? 0);
     await addLog(c.id, message, "error");
     await db
       .update(schema.collectes)

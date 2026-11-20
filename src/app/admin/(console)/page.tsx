@@ -1,9 +1,11 @@
+import { count, eq, sql } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CollecteList } from "@/components/admin/collecte-list";
 import { countryName, dateShort, fcfa, flag, int, PAYMENT_METHODS, usd, usdSmall } from "@/components/admin/format";
 import { PageTitle, panel } from "@/components/admin/ui";
 import { getOverview, listCollectes } from "@/lib/admin-stats";
+import { db, schema } from "@/db";
 import { requireConsoleAdmin } from "@/lib/auth";
 import { limits } from "@/lib/config";
 
@@ -67,7 +69,14 @@ function ActivityChart({ series }: { series: { day: string; visits: number; logi
 
 export default async function Page() {
   await requireConsoleAdmin();
-  const [o, recent] = await Promise.all([getOverview(), listCollectes({ limit: 8 })]);
+  const [o, recent, [kb], [contrib]] = await Promise.all([
+    getOverview(),
+    listCollectes({ limit: 8 }),
+    db
+      .select({ total: count(), week: sql<number>`count(*) filter (where ${schema.kbEntities.createdAt} > now() - interval '7 days')`.mapWith(Number) })
+      .from(schema.kbEntities),
+    db.select({ pending: count() }).from(schema.contributions).where(eq(schema.contributions.status, "pending")),
+  ]);
   const totalCountry = o.countries.reduce((n, c) => n + c.n, 0);
 
   return (
@@ -79,6 +88,15 @@ export default async function Page() {
         <Stat label="Connexions" value={int(o.logins.total)} hint={`${int(o.logins.users)} utilisateur${o.logins.users > 1 ? "s" : ""} différent${o.logins.users > 1 ? "s" : ""}`} />
         <Stat label="Utilisateurs" value={int(o.users.total)} hint={`${o.users.new7} nouveau${o.users.new7 > 1 ? "x" : ""} en 7 jours · ${o.users.premium} premium`} />
         <Stat label="Revenus du mois" value={fcfa(o.revenue.month)} hint={`${fcfa(o.revenue.total)} au total · ${o.revenue.payers} client${o.revenue.payers > 1 ? "s" : ""}`} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Link href="/admin/base" className="rounded-lg focus-visible:outline-2">
+          <Stat label="Base Luka" value={int(kb.total)} hint={`établissements connus · +${int(kb.week)} en 7 jours`} />
+        </Link>
+        <Link href="/admin/contributions" className="rounded-lg focus-visible:outline-2">
+          <Stat label="Contributions à vérifier" value={int(contrib.pending)} hint="fichiers envoyés par les utilisateurs" />
+        </Link>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-3">

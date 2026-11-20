@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { apiUser, jsonError } from "@/lib/api";
@@ -32,9 +33,11 @@ export async function POST(req: Request) {
   const tierMax = tierLimits(tier).maxRows;
   const maxRows = Math.min(parsed.data.maxRows ?? tierMax, tierMax);
 
+  // Partage avec la base Luka : selon le réglage du compte (Mon compte), modifiable ensuite sur la collecte
+  const [{ shareData }] = await db.select({ shareData: schema.user.shareData }).from(schema.user).where(eq(schema.user.id, user.id));
   const [c] = await db
     .insert(schema.collectes)
-    .values({ userId: user.id, title, request, columns, maxRows, tier })
+    .values({ userId: user.id, title, request, columns, maxRows, tier, shareData })
     .returning({ id: schema.collectes.id });
 
   // La collecte attend dans la file : le travailleur (src/lib/worker.ts) la prend en charge
