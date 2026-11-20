@@ -83,6 +83,7 @@ export type AdminCollecte = {
   columns: ColumnDef[];
   status: string;
   tier: string;
+  kind: string;
   error: string | null;
   maxRows: number;
   rows: number;
@@ -106,6 +107,7 @@ export async function listCollectes({ userId, limit = 100 }: { userId?: string; 
       columns: c.columns,
       status: c.status,
       tier: c.tier,
+      kind: c.kind,
       error: c.error,
       maxRows: c.maxRows,
       costUsd: c.costUsd,

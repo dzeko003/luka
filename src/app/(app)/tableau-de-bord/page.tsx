@@ -1,5 +1,5 @@
 import { and, count, desc, eq, ilike, sql } from "drizzle-orm";
-import { ArrowUpRight, Database, Download, Gauge, Layers, Link2, ListChecks, Plus, Search, SlidersHorizontal } from "lucide-react";
+import { ArrowUpRight, Database, Download, FileSpreadsheet, Gauge, Layers, Link2, ListChecks, Plus, Search, SlidersHorizontal } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { StatCard } from "@/components/stat-card";
@@ -81,9 +81,14 @@ export default async function Dashboard({ searchParams }: PageProps<"/tableau-de
           <h1 className="text-xl font-bold tracking-tight">Bonjour {firstName}</h1>
           <p className="text-[13px] text-muted">Voici l&apos;état de tes collectes de données.</p>
         </div>
-        <Link href="/collectes/nouvelle" className="btn-primary">
-          <Plus className="size-4" /> Nouvelle collecte
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/collectes/enrichir" className="btn-ghost">
+            <FileSpreadsheet className="size-4" /> Compléter un fichier
+          </Link>
+          <Link href="/collectes/nouvelle" className="btn-primary">
+            <Plus className="size-4" /> Nouvelle collecte
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

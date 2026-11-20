@@ -16,6 +16,8 @@ export const limits = {
     maxEnrichSites: num(process.env.FREE_MAX_ENRICH_SITES, 25),
     /** Lieux dont l'arrondissement et le quartier sont retrouvés par leurs coordonnées (1 par seconde). */
     maxReverseGeocode: num(process.env.FREE_MAX_REVERSE_GEOCODE, 200),
+    /** Enrichissement d'un fichier : lignes complétées au maximum (une recherche web par ligne). */
+    maxEnrichRows: num(process.env.FREE_MAX_ENRICH_ROWS, 20),
   },
   /** Premium : sources payantes (Google Maps et réseaux sociaux via Apify), volumes plus élevés. */
   premium: {
@@ -26,11 +28,14 @@ export const limits = {
     charsPerPage: 8000,
     maxEnrichSites: num(process.env.PREMIUM_MAX_ENRICH_SITES, 200),
     maxReverseGeocode: num(process.env.PREMIUM_MAX_REVERSE_GEOCODE, 1000),
+    maxEnrichRows: num(process.env.PREMIUM_MAX_ENRICH_ROWS, 300),
   },
   globalLlmCallsPerDay: num(process.env.GLOBAL_LLM_CALLS_PER_DAY, 500),
   maxConcurrentPerUser: 1,
   /** Colonnes maximum par collecte. */
   maxColumns: 25,
+  /** Enrichissement : lignes acceptées à l'import (au-delà de la limite de la formule, le reste est ignoré). */
+  maxImportRows: 2000,
   /** Collectes exécutées en même temps par le serveur ; les autres attendent dans la file. */
   workerConcurrency: num(process.env.WORKER_CONCURRENCY, 2),
   /** Plafond technique d'une collecte, toutes formules confondues. */

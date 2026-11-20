@@ -112,6 +112,7 @@ export async function runActor<T>(
 /* ------------------------------------------------------------------ */
 
 type GmapsItem = {
+  searchString?: string;
   title?: string;
   categoryName?: string;
   categories?: string[];
@@ -232,6 +233,34 @@ export async function searchGoogleMaps(
   );
   const places = items.map(gmapsToPlace).filter((p): p is Place => p !== null);
   return { places, costUsd, status };
+}
+
+/**
+ * Enrichissement : cherche chaque établissement par son nom (un seul résultat par recherche).
+ * Rend la fiche trouvée pour chaque recherche ; c'est à l'appelant de vérifier que le nom correspond.
+ */
+export async function lookupGoogleMaps(zone: string, names: string[], opts: { maxUsd: number; contacts: boolean }) {
+  const { items, costUsd } = await runActor<GmapsItem>(
+    apify.gmapsActor,
+    {
+      searchStringsArray: names,
+      locationQuery: zone,
+      maxCrawledPlacesPerSearch: 1,
+      language: "fr",
+      scrapeContacts: opts.contacts,
+      skipClosedPlaces: false,
+      maxReviews: 0,
+      maxImages: 0,
+      scrapeReviewsPersonalData: false,
+    },
+    { maxItems: names.length * 2, maxUsd: opts.maxUsd },
+  );
+  const found = new Map<string, Place>();
+  for (const it of items) {
+    const p = gmapsToPlace(it);
+    if (p && it.searchString && !found.has(it.searchString)) found.set(it.searchString, p);
+  }
+  return { found, costUsd };
 }
 
 /* ------------------------------------------------------------------ */

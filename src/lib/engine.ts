@@ -13,8 +13,8 @@ import { chatJson } from "./llm";
 import { collecteMail, sendMail } from "./mailer";
 import { notify } from "./notifications";
 
-type Value = string | number | boolean | null;
-type ExtractedRow = {
+export type Value = string | number | boolean | null;
+export type ExtractedRow = {
   data: Record<string, Value>;
   /** Liens vers les réseaux sociaux, gardés même sans colonne dédiée (pour l'enrichissement). */
   links?: { facebook?: string; instagram?: string };
@@ -29,7 +29,7 @@ type ExtractedRow = {
 /* Prompts                                                             */
 /* ------------------------------------------------------------------ */
 
-function describeColumns(columns: ColumnDef[]) {
+export function describeColumns(columns: ColumnDef[]) {
   return columns
     .map((c) => `- "${c.name}" (${c.type}) : ${c.label}${c.description ? ` — ${c.description}` : ""}`)
     .join("\n");
@@ -61,7 +61,7 @@ async function planQueries(c: CollecteRecord, max: number) {
 /* Lieux : Google Maps (Premium), OpenStreetMap, réseaux sociaux       */
 /* ------------------------------------------------------------------ */
 
-type PlacesPlan = {
+export type PlacesPlan = {
   zones: string[];
   filters: OsmFilter[];
   /** Recherches à taper dans Google Maps (« restaurant », « hôtel »…) */
@@ -173,7 +173,7 @@ async function enrichFromCoordinates(c: CollecteRecord, plan: PlacesPlan, rows: 
 }
 
 /** Budget Apify d'une collecte : chaque robot reçoit ce qui reste, Apify l'arrête au-delà. */
-class Budget {
+export class Budget {
   spent = 0;
   constructor(readonly max: number) {}
   get left() {
@@ -230,7 +230,7 @@ async function collectPlaces(c: CollecteRecord, plan: PlacesPlan, found: RowSet,
 }
 
 /** Premium : complète les lignes avec les pages Facebook et les comptes Instagram publics des établissements. */
-async function enrichFromSocial(c: CollecteRecord, plan: PlacesPlan, rows: ExtractedRow[], budget: Budget) {
+export async function enrichFromSocial(c: CollecteRecord, plan: PlacesPlan, rows: ExtractedRow[], budget: Budget) {
   const colsFor = (...fields: PlaceField[]) => c.columns.filter((col) => fields.includes(plan.mapping[col.name]));
   const isEmpty = (v: Value) => v === null || v === "";
   const fillable = colsFor("email", "telephone", "site_web", "description", "adresse", "categorie");
@@ -322,7 +322,7 @@ function contactKind(col: ColumnDef): ContactKind | null {
   return null;
 }
 
-async function enrichFromWebsites(c: CollecteRecord, rows: ExtractedRow[]) {
+export async function enrichFromWebsites(c: CollecteRecord, rows: ExtractedRow[]) {
   const kinds = new Map(c.columns.map((col) => [col.name, contactKind(col)]));
   const siteCol = c.columns.find((col) => kinds.get(col.name) === "site_web")?.name;
   const wanted = c.columns.filter((col) => {
@@ -443,7 +443,7 @@ const STOP = new Set(
   "avec dans pour leur leurs sont cette ceux celles quels quelles liste les des une aux par sur plus tous toutes actuel actuelle nom noms".split(" "),
 );
 
-const fold = (s: string) =>
+export const fold = (s: string) =>
   s
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -458,7 +458,7 @@ function keywordsOf(c: CollecteRecord) {
  * Une page peut être longue : on la découpe en passages et on garde les plus pertinents
  * (mots de la demande et des colonnes), dans leur ordre d'origine, jusqu'à `budget` caractères.
  */
-function selectPassages(content: string, keywords: string[], budget: number) {
+export function selectPassages(content: string, keywords: string[], budget: number) {
   if (content.length <= budget) return content;
   const size = 1200;
   const chunks: { i: number; text: string; score: number }[] = [];
@@ -485,7 +485,7 @@ function selectPassages(content: string, keywords: string[], budget: number) {
 /* Normalisation et dédoublonnage                                      */
 /* ------------------------------------------------------------------ */
 
-function normalizeValue(v: unknown, type: ColumnDef["type"]): Value {
+export function normalizeValue(v: unknown, type: ColumnDef["type"]): Value {
   if (v === undefined || v === null) return null;
   if (typeof v === "object") v = JSON.stringify(v);
   const s = String(v).trim();
@@ -506,7 +506,7 @@ function normalizeValue(v: unknown, type: ColumnDef["type"]): Value {
   }
 }
 
-const keyOf = (v: Value) =>
+export const keyOf = (v: Value) =>
   String(v ?? "")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -578,13 +578,13 @@ function mergeInto(dup: ExtractedRow, row: ExtractedRow) {
 /* Exécution                                                           */
 /* ------------------------------------------------------------------ */
 
-type CollecteRecord = typeof schema.collectes.$inferSelect;
+export type CollecteRecord = typeof schema.collectes.$inferSelect;
 
 /** Au-delà de cette durée (file d'attente comprise), l'utilisateur a sans doute quitté la page : on le prévient par e-mail. */
 const MAIL_AFTER_MS = 2 * 60_000;
 
 /** E-mail de fin de collecte ; une erreur d'envoi n'affecte jamais la collecte. */
-async function mailCollecteEnd(c: CollecteRecord, outcome: { rows?: number; error?: string }) {
+export async function mailCollecteEnd(c: CollecteRecord, outcome: { rows?: number; error?: string }) {
   if (Date.now() - c.createdAt.getTime() < MAIL_AFTER_MS) return;
   try {
     const [u] = await db
@@ -599,7 +599,7 @@ async function mailCollecteEnd(c: CollecteRecord, outcome: { rows?: number; erro
   }
 }
 
-async function addLog(id: string, message: string, level: LogEntry["level"] = "info") {
+export async function addLog(id: string, message: string, level: LogEntry["level"] = "info") {
   const entry: LogEntry = { at: new Date().toISOString(), message, level };
   await db
     .update(schema.collectes)
@@ -608,7 +608,7 @@ async function addLog(id: string, message: string, level: LogEntry["level"] = "i
 }
 
 /** Avancement affiché à l'utilisateur (0 → 100). */
-async function setProgress(id: string, pct: number) {
+export async function setProgress(id: string, pct: number) {
   await db
     .update(schema.collectes)
     .set({ progress: Math.max(0, Math.min(100, Math.round(pct))), heartbeatAt: new Date() })
@@ -616,7 +616,7 @@ async function setProgress(id: string, pct: number) {
 }
 
 /** Enregistre les lignes par paquets (une requête unique dépasserait la limite de PostgreSQL). */
-async function saveRows(collecteId: string, rows: ExtractedRow[]) {
+export async function saveRows(collecteId: string, rows: ExtractedRow[]) {
   for (let i = 0; i < rows.length; i += 1000) {
     await db.insert(schema.rows).values(
       rows.slice(i, i + 1000).map((r, j) => ({
@@ -635,6 +635,8 @@ async function saveRows(collecteId: string, rows: ExtractedRow[]) {
 export async function runCollecte(collecteId: string) {
   const [c] = await db.select().from(schema.collectes).where(eq(schema.collectes.id, collecteId));
   if (!c || c.status !== "running") return;
+  // Enrichissement d'un fichier importé : autre déroulé, mêmes sources (import tardif : évite une dépendance circulaire)
+  if (c.kind === "enrichissement") return (await import("./enrich")).runEnrichment(c);
 
   const cfg = tierLimits(c.tier);
   const firstCol = c.columns[0].name;

@@ -30,7 +30,9 @@ export async function GET(_req: Request, { params }: Ctx) {
       .where(and(eq(schema.collectes.status, "pending"), lt(schema.collectes.createdAt, c.createdAt)));
     queuePosition = q.n + 1;
   }
-  return Response.json({ collecte: c, counts, queuePosition });
+  // Le fichier importé (enrichissement) peut être lourd et n'est pas affiché : il ne part pas avec chaque rafraîchissement
+  const { input, ...collecte } = c;
+  return Response.json({ collecte: { ...collecte, inputRows: input?.length ?? null }, counts, queuePosition });
 }
 
 export async function DELETE(_req: Request, { params }: Ctx) {

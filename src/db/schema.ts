@@ -101,6 +101,7 @@ export type ColumnDef = {
   type: ColumnType;
   description?: string; // aide pour l'IA
   field?: string; // champ de lieu (PLACE_FIELDS) qui remplit cette colonne automatiquement
+  fromFile?: boolean; // enrichissement : colonne du fichier importé (gardée telle quelle, jamais remplie)
 };
 
 export type LogEntry = { at: string; message: string; level?: "info" | "warn" | "error" };
@@ -113,7 +114,9 @@ export const collectes = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
-    request: text("request").notNull(), // demande en langage naturel
+    request: text("request").notNull(), // demande en langage naturel (enrichissement : ce que sont les lignes)
+    kind: text("kind").notNull().default("collecte"), // collecte | enrichissement
+    input: jsonb("input").$type<Record<string, string>[]>(), // enrichissement : lignes du fichier importé
     columns: jsonb("columns").$type<ColumnDef[]>().notNull(),
     maxRows: integer("max_rows").notNull().default(20),
     tier: text("tier").notNull().default("free"), // free | premium

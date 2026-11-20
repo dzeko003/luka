@@ -22,6 +22,7 @@ export function CollecteList({ collectes, showUser = true }: { collectes: AdminC
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
                     <span className="truncate font-medium">{x.title}</span>
+                    {x.kind === "enrichissement" && <Badge>Fichier complété</Badge>}
                     {x.tier === "premium" && <Badge tone="info">Premium</Badge>}
                   </span>
                   {showUser && <span className="block truncate text-[12px] text-muted">{x.userEmail}</span>}
@@ -35,7 +36,7 @@ export function CollecteList({ collectes, showUser = true }: { collectes: AdminC
 
               <div className="space-y-4 border-t border-border bg-bg/50 px-4 py-4 pl-10 text-[13px]">
                 <div>
-                  <p className="mb-1.5 text-[12px] font-medium text-muted">Demande</p>
+                  <p className="mb-1.5 text-[12px] font-medium text-muted">{x.kind === "enrichissement" ? "Contenu du fichier" : "Demande"}</p>
                   <p className="rounded-md border border-border bg-surface px-3 py-2 leading-relaxed whitespace-pre-wrap">{x.request}</p>
                 </div>
                 <div>
