@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { captchaErrorMessage, Turnstile, turnstileSiteKey } from "../turnstile";
+import { AdminMfaSetup, type Enrollment, prepareEnrollment } from "./admin-mfa-setup";
 import { alertCls as alert, btn, btnGhost, DialogCard, field, fieldLabel } from "./ui";
 
 function codeError(code?: string, status?: number) {
@@ -28,16 +29,18 @@ export function AdminLogin({ startAtCode, notice }: { startAtCode?: boolean; not
   const [loading, setLoading] = useState(false);
   const [captcha, setCaptcha] = useState<string | null>(null);
   const [captchaReset, setCaptchaReset] = useState(0);
+  const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
 
   async function onPassword(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     if (turnstileSiteKey && !captcha) return setError("Valide le captcha avant de continuer.");
     const form = new FormData(e.currentTarget);
+    const password = String(form.get("password"));
     setLoading(true);
     const { data, error } = await authClient.signIn.email({
       email: String(form.get("email")).trim(),
-      password: String(form.get("password")),
+      password,
       fetchOptions: captcha ? { headers: { "x-captcha-response": captcha } } : undefined,
     });
     setLoading(false);
@@ -59,9 +62,21 @@ export function AdminLogin({ startAtCode, notice }: { startAtCode?: boolean; not
       setStep("code");
       return;
     }
-    // Double authentification pas encore activée : page d'activation (404 pour un compte non administrateur)
-    router.push("/admin/securite");
-    router.refresh();
+    // Double authentification pas encore activée : un administrateur relie tout de suite Google Authenticator
+    // avec le mot de passe qu'il vient de saisir. Un autre compte est envoyé vers une page 404.
+    if ((data?.user as { role?: string } | undefined)?.role !== "admin") {
+      router.push("/admin/securite");
+      return;
+    }
+    setLoading(true);
+    const enabled = await authClient.twoFactor.enable({ password });
+    if (enabled.error || !enabled.data || !("totpURI" in enabled.data)) {
+      setLoading(false);
+      router.push("/admin/securite");
+      return;
+    }
+    setEnrollment(await prepareEnrollment(enabled.data.totpURI, enabled.data.backupCodes));
+    setLoading(false);
   }
 
   async function onCode(e: React.FormEvent<HTMLFormElement>) {
@@ -81,6 +96,8 @@ export function AdminLogin({ startAtCode, notice }: { startAtCode?: boolean; not
     router.push("/admin");
     router.refresh();
   }
+
+  if (enrollment) return <AdminMfaSetup initial={enrollment} />;
 
   if (step === "code") {
     return (
@@ -149,7 +166,7 @@ export function AdminLogin({ startAtCode, notice }: { startAtCode?: boolean; not
             Annuler
           </Link>
           <button form="password-form" className={btn} disabled={loading}>
-            {loading ? "Connexion…" : "Continuer"}
+            {loading ? "Connexion…" : "Connexion"}
           </button>
         </>
       }

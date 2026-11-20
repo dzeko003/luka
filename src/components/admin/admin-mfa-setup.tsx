@@ -1,24 +1,38 @@
 "use client";
 
-import { Check, Copy, Download, Lock } from "lucide-react";
+import { Check, Copy, Download } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
-import { alertCls as alert, Badge, btn, btnGhost, DialogCard, field, fieldLabel } from "./ui";
+import { alertCls as alert, btn, btnGhost, DialogCard, field, fieldLabel } from "./ui";
 
-type Step = "choice" | "password" | "scan" | "codes";
+type Step = "password" | "scan" | "codes";
 
-/** Activation de la double authentification (Google Authenticator) avant le premier accès à la console. */
-export function AdminMfaSetup({ hasPassword }: { hasPassword: boolean }) {
+export type Enrollment = { qr: string; secret: string; codes: string[] };
+
+/** Prépare l'affichage de l'activation : QR code, clé à saisir à la main et codes de secours. */
+export async function prepareEnrollment(totpURI: string, backupCodes: string[]): Promise<Enrollment> {
+  return {
+    qr: await QRCode.toDataURL(totpURI, { margin: 1, width: 360, color: { dark: "#111113", light: "#ffffff" } }),
+    secret: new URL(totpURI).searchParams.get("secret") ?? "",
+    codes: backupCodes,
+  };
+}
+
+/**
+ * Activation de la double authentification (Google Authenticator) avant le premier accès à l'administration.
+ * Depuis la connexion admin, le QR code est déjà prêt (`initial`) ; sinon le mot de passe est demandé d'abord.
+ */
+export function AdminMfaSetup({ hasPassword = true, initial }: { hasPassword?: boolean; initial?: Enrollment }) {
   const router = useRouter();
-  const [step, setStep] = useState<Step>("choice");
+  const [step, setStep] = useState<Step>(initial ? "scan" : "password");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [qr, setQr] = useState<string | null>(null);
-  const [secret, setSecret] = useState("");
-  const [codes, setCodes] = useState<string[]>([]);
+  const [qr, setQr] = useState<string | null>(initial?.qr ?? null);
+  const [secret, setSecret] = useState(initial?.secret ?? "");
+  const [codes, setCodes] = useState<string[]>(initial?.codes ?? []);
   const [copied, setCopied] = useState<"secret" | "codes" | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -39,9 +53,10 @@ export function AdminMfaSetup({ hasPassword }: { hasPassword: boolean }) {
         error?.code === "INVALID_PASSWORD" ? "Mot de passe incorrect." : error?.status === 429 ? "Trop de tentatives. Réessaie dans une minute." : "L'activation a échoué. Réessaie.",
       );
     }
-    setQr(await QRCode.toDataURL(data.totpURI, { margin: 1, width: 360, color: { dark: "#111113", light: "#ffffff" } }));
-    setSecret(new URL(data.totpURI).searchParams.get("secret") ?? "");
-    setCodes(data.backupCodes);
+    const e2 = await prepareEnrollment(data.totpURI, data.backupCodes);
+    setQr(e2.qr);
+    setSecret(e2.secret);
+    setCodes(e2.codes);
     setLoading(false);
     setStep("scan");
   }
@@ -65,66 +80,32 @@ export function AdminMfaSetup({ hasPassword }: { hasPassword: boolean }) {
     URL.revokeObjectURL(url);
   }
 
-  if (step === "choice") {
+  if (step === "password") {
     return (
       <DialogCard
-        wide
-        title="Protège l'administration avec la double authentification"
-        subtitle="Obligatoire pour accéder à l'administration. Choisis comment recevoir tes codes."
+        title="Active la double authentification"
+        subtitle="Obligatoire pour l'administration. Confirme ton mot de passe, puis relie Google Authenticator."
         footer={
           <>
             <Link href="/tableau-de-bord" className={btnGhost}>
               Annuler
             </Link>
-            <button className={btn} disabled={!hasPassword} onClick={() => setStep("password")}>
-              Continuer
-            </button>
-          </>
-        }
-      >
-        <div className="flex gap-3 rounded-lg border border-border-strong bg-surface-2 p-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-full border border-border-strong bg-bg text-muted">
-            <Lock className="size-4" />
-          </span>
-          <div className="min-w-0">
-            <p className="flex flex-wrap items-center gap-2 text-[13.5px] font-medium">
-              Application d&apos;authentification <Badge tone="success">Recommandé</Badge>
-            </p>
-            <p className="mt-0.5 text-[13px] text-muted">
-              Google Authenticator (ou une application compatible) génère un nouveau code toutes les 30 secondes, même sans réseau.
-            </p>
-          </div>
-        </div>
-        {!hasPassword && (
-          <p className="mt-4 rounded-md border border-warn-border bg-warn-soft px-3 py-2 text-[13px] text-warn">
-            Ton compte n&apos;a pas encore de mot de passe : l&apos;administration en demande un en plus du code. Crée-le dans{" "}
-            <Link href="/compte" className="underline underline-offset-2">
-              Mon compte
-            </Link>
-            , puis reviens ici.
-          </p>
-        )}
-      </DialogCard>
-    );
-  }
-
-  if (step === "password") {
-    return (
-      <DialogCard
-        title="Confirme ton mot de passe"
-        subtitle="Par sécurité, avant de relier ton téléphone."
-        footer={
-          <>
-            <button type="button" className={btnGhost} onClick={() => setStep("choice")}>
-              Retour
-            </button>
-            <button form="pw-form" className={btn} disabled={loading}>
-              {loading ? "Patiente…" : "Continuer"}
+            <button form="pw-form" className={btn} disabled={loading || !hasPassword}>
+              {loading ? "Patiente…" : "Afficher le QR code"}
             </button>
           </>
         }
       >
         <form id="pw-form" onSubmit={onPassword} className="space-y-4">
+          {!hasPassword && (
+            <p className="rounded-md border border-warn-border bg-warn-soft px-3 py-2 text-[13px] text-warn">
+              Ton compte n&apos;a pas encore de mot de passe : l&apos;administration en demande un en plus du code. Crée-le dans{" "}
+              <Link href="/compte" className="underline underline-offset-2">
+                Mon compte
+              </Link>
+              , puis reviens ici.
+            </p>
+          )}
           <div>
             <label className={fieldLabel} htmlFor="password">
               Mot de passe
