@@ -230,8 +230,8 @@ function Faits() {
 /* ───────────── 3. Démo vidéo ───────────── */
 
 function Demo() {
-  // Vidéo de démonstration : variable DEMO_VIDEO_URL (ex. /landing/demo.mp4). Vide = emplacement « bientôt disponible ».
-  const video = process.env.DEMO_VIDEO_URL || null;
+  // Vidéo de démonstration (carrée, avec voix off) ; DEMO_VIDEO_URL permet d'en servir une autre.
+  const video = process.env.DEMO_VIDEO_URL || `${IMG}/luka-demo.mp4`;
   return (
     <Band id="demo" className="bg-white" inner="px-5 py-16 sm:px-10 sm:py-24 lg:px-14">
       <div className="mx-auto max-w-[760px] text-center">
@@ -244,7 +244,7 @@ function Demo() {
       </div>
 
       {/* Cadre « navigateur » qui accueille la vidéo de démonstration */}
-      <div className="mx-auto mt-12 max-w-[1080px] overflow-hidden rounded-2xl border border-(--line) bg-white p-2 shadow-[0_40px_80px_-40px_rgba(20,27,52,.35)] sm:rounded-3xl sm:p-3">
+      <div className="mx-auto mt-12 max-w-[720px] overflow-hidden rounded-2xl border border-(--line) bg-white p-2 shadow-[0_40px_80px_-40px_rgba(20,27,52,.35)] sm:rounded-3xl sm:p-3">
         <div className="flex items-center gap-2 px-2 pb-2 sm:pb-3">
           <span className="size-2.5 rounded-full bg-[#ff5f57]" />
           <span className="size-2.5 rounded-full bg-[#febc2e]" />
@@ -253,36 +253,17 @@ function Demo() {
             luka · nouvelle collecte
           </span>
         </div>
-        <div className="relative aspect-video overflow-hidden rounded-xl bg-(--ink) sm:rounded-2xl">
-          {video ? (
-            <video
-              src={video}
-              poster={`${IMG}/etudiants-ordinateur.webp`}
-              className="size-full object-cover"
-              autoPlay
-              muted
-              loop
-              playsInline
-              controls
-              preload="metadata"
-            >
-              Ton navigateur ne peut pas lire cette vidéo.
-            </video>
-          ) : (
-            <>
-              <img src={`${IMG}/etudiants-ordinateur.webp`} alt="" className="absolute inset-0 size-full object-cover opacity-30" />
-              <div className="absolute inset-0 bg-[radial-gradient(60%_60%_at_50%_50%,rgba(94,10,255,.35),rgba(20,27,52,.85))]" />
-              <div className="relative flex size-full flex-col items-center justify-center px-6 text-center text-white">
-                <span className="grid size-16 place-items-center rounded-full bg-white/15 ring-8 ring-white/5 backdrop-blur sm:size-20">
-                  <Play className="ml-1 size-7 fill-white sm:size-8" />
-                </span>
-                <p className="mt-5 text-[18px] font-semibold sm:text-[22px]">La vidéo de démonstration arrive bientôt</p>
-                <p className="mt-2 max-w-[440px] text-[14px] text-white/70 sm:text-[15px]">
-                  En attendant, crée ton compte gratuit et lance ta première collecte en quelques minutes.
-                </p>
-              </div>
-            </>
-          )}
+        <div className="relative aspect-square overflow-hidden rounded-xl bg-(--ink) sm:rounded-2xl">
+          <video
+            src={video}
+            poster={`${IMG}/luka-demo-poster.webp`}
+            className="size-full object-cover"
+            playsInline
+            controls
+            preload="metadata"
+          >
+            Ton navigateur ne peut pas lire cette vidéo.
+          </video>
         </div>
       </div>
 
@@ -607,7 +588,7 @@ function Final() {
               name="email"
               type="email"
               placeholder="Ton adresse email"
-              className="h-12 min-w-0 flex-1 rounded-xl bg-white px-4 text-[15px] text-(--ink) outline-none placeholder:text-[#8a8d99]"
+              className="h-12 w-full min-w-0 shrink-0 rounded-xl bg-white px-4 text-[15px] text-(--ink) outline-none placeholder:text-[#8a8d99] sm:w-auto sm:flex-1"
             />
             <button className={btnPrimary}>
               Commencer <ArrowRight className="size-4" />
