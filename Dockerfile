@@ -13,6 +13,10 @@ COPY . .
 # Clé publique du captcha : inscrite dans le code du navigateur, donc fixée au build
 ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY=""
 ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_TURNSTILE_SITE_KEY
+# Signalement des erreurs du navigateur (Sentry) et version en ligne : fixés au build, vides en local
+ARG NEXT_PUBLIC_SENTRY_DSN=""
+ARG NEXT_PUBLIC_LUKA_VERSION=""
+ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN NEXT_PUBLIC_LUKA_VERSION=$NEXT_PUBLIC_LUKA_VERSION
 # Le build ne se connecte pas à la base, mais le module l'exige
 RUN DATABASE_URL=postgres://build:build@localhost:5432/build npm run build
 
