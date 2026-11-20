@@ -23,6 +23,7 @@ export function CollecteList({ collectes, showUser = true }: { collectes: AdminC
                   <span className="flex items-center gap-2">
                     <span className="truncate font-medium">{x.title}</span>
                     {x.kind === "enrichissement" && <Badge>Fichier complété</Badge>}
+                    {x.refresh !== "aucune" && <Badge tone="success">{x.refresh === "hebdo" ? "MAJ hebdo" : "MAJ mensuelle"}</Badge>}
                     {x.tier === "premium" && <Badge tone="info">Premium</Badge>}
                   </span>
                   {showUser && <span className="block truncate text-[12px] text-muted">{x.userEmail}</span>}

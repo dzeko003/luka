@@ -5,6 +5,8 @@ const num = (v: string | undefined, d: number) => {
   return Number.isFinite(n) && n > 0 ? n : d;
 };
 
+export type RefreshFrequency = "hebdo" | "mensuelle";
+
 export const limits = {
   free: {
     collectesPerDay: num(process.env.FREE_COLLECTES_PER_DAY, 5),
@@ -34,6 +36,11 @@ export const limits = {
   maxConcurrentPerUser: 1,
   /** Colonnes maximum par collecte. */
   maxColumns: 25,
+  /** Mise à jour automatique : collectes suivies et fréquences permises, selon la formule. */
+  refresh: {
+    free: { maxFollowed: num(process.env.FREE_MAX_FOLLOWED, 1), frequencies: ["mensuelle"] as RefreshFrequency[] },
+    premium: { maxFollowed: num(process.env.PREMIUM_MAX_FOLLOWED, 10), frequencies: ["hebdo", "mensuelle"] as RefreshFrequency[] },
+  },
   /** Enrichissement : lignes acceptées à l'import (au-delà de la limite de la formule, le reste est ignoré). */
   maxImportRows: 2000,
   /** Collectes exécutées en même temps par le serveur ; les autres attendent dans la file. */

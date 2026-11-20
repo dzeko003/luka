@@ -13,6 +13,7 @@ import {
   Download,
   FileJson,
   Loader2,
+  RefreshCw,
   Search,
   Trash2,
   X,
@@ -31,6 +32,8 @@ type Row = {
   sourceTitle: string | null;
   confidence: number | null;
   status: "a_verifier" | "valide" | "rejete";
+  change: "nouveau" | "modifie" | "non_retrouve" | null;
+  previous: Record<string, string | number | boolean | null> | null;
 };
 type Counts = { total: number; valide: number; a_verifier: number; rejete: number };
 type Page = { rows: Row[]; total: number; page: number; size: number };
@@ -53,7 +56,100 @@ type Collecte = {
   costUsd: number;
   tier: string;
   createdAt: string;
+  refresh: "aucune" | "hebdo" | "mensuelle";
+  nextRefreshAt: string | null;
+  lastRefreshAt: string | null;
+  refreshing: boolean;
+  lastChanges: { nouveau: number; modifie: number; nonRetrouve: number } | null;
 };
+
+type Filter = "" | Row["status"] | "changements";
+
+const CHANGE_BADGE: Record<NonNullable<Row["change"]>, { label: string; cls: string }> = {
+  nouveau: { label: "Nouveau", cls: "bg-accent-soft text-accent" },
+  modifie: { label: "Modifié", cls: "bg-warn-soft text-warn" },
+  non_retrouve: { label: "Non retrouvée", cls: "bg-surface-2 text-muted" },
+};
+
+const dateFr = (d: string) => new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+
+function changesText(ch: NonNullable<Collecte["lastChanges"]>) {
+  const parts = [
+    ch.nouveau && `${ch.nouveau} nouvelle(s)`,
+    ch.modifie && `${ch.modifie} modifiée(s)`,
+    ch.nonRetrouve && `${ch.nonRetrouve} non retrouvée(s)`,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "aucun changement";
+}
+
+/** Réglage de la mise à jour automatique et bilan de la dernière. */
+function RefreshPanel({
+  collecte,
+  options,
+  onChange,
+  onShowChanges,
+}: {
+  collecte: Collecte;
+  options: string[];
+  onChange: (refresh: Collecte["refresh"]) => Promise<string | null>;
+  onShowChanges: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const ch = collecte.lastChanges;
+  const changed = ch ? ch.nouveau + ch.modifie + ch.nonRetrouve : 0;
+  const choices = [
+    { v: "aucune", l: "Jamais" },
+    { v: "hebdo", l: "Chaque semaine" },
+    { v: "mensuelle", l: "Chaque mois" },
+  ] as const;
+
+  return (
+    <section className="card flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-3.5">
+      <RefreshCw className={`size-5 shrink-0 ${collecte.refresh !== "aucune" ? "text-accent" : "text-muted"}`} />
+      <div className="min-w-0 flex-1">
+        <p className="text-[14px] font-semibold">Mise à jour automatique</p>
+        <p className="text-xs text-muted">
+          {collecte.refreshing
+            ? "Mise à jour en cours : tes lignes restent consultables."
+            : collecte.refresh !== "aucune" && collecte.nextRefreshAt
+              ? `Prochaine le ${dateFr(collecte.nextRefreshAt)}. Les nouveautés et les changements seront marqués, tes validations gardées.`
+              : "Luka relance la recherche et te signale les nouvelles lignes et les changements."}
+          {ch && collecte.lastRefreshAt && !collecte.refreshing && (
+            <>
+              {" "}
+              Dernière le {dateFr(collecte.lastRefreshAt)} : {changesText(ch)}.
+              {changed > 0 && (
+                <button type="button" className="ml-1 font-medium text-accent hover:underline" onClick={onShowChanges}>
+                  Voir les changements
+                </button>
+              )}
+            </>
+          )}
+        </p>
+        {err && <p className="mt-1 text-xs text-danger">{err}</p>}
+      </div>
+      <select
+        className="input w-auto py-1.5 text-[13px]"
+        aria-label="Fréquence de mise à jour"
+        value={collecte.refresh}
+        disabled={busy || collecte.refreshing}
+        onChange={async (e) => {
+          setBusy(true);
+          setErr(await onChange(e.target.value as Collecte["refresh"]));
+          setBusy(false);
+        }}
+      >
+        {choices.map((c) => (
+          <option key={c.v} value={c.v} disabled={c.v !== "aucune" && !options.includes(c.v)}>
+            {c.l}
+            {c.v !== "aucune" && !options.includes(c.v) ? " (Premium)" : ""}
+          </option>
+        ))}
+      </select>
+    </section>
+  );
+}
 
 const ROW_STATUS: Record<Row["status"], { label: string; cls: string }> = {
   a_verifier: { label: "À vérifier", cls: "" },
@@ -107,7 +203,8 @@ export function CollecteView({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmBulk, setConfirmBulk] = useState<Row["status"] | null>(null);
-  const [filter, setFilter] = useState<"" | Row["status"]>("");
+  const [filter, setFilter] = useState<Filter>("");
+  const [refreshOptions, setRefreshOptions] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState(""); // recherche envoyée au serveur (après une courte pause de frappe)
   const [page, setPage] = useState(1);
@@ -121,6 +218,7 @@ export function CollecteView({ id }: { id: string }) {
     setCollecte(json.collecte);
     setCounts(json.counts);
     setQueuePosition(json.queuePosition);
+    setRefreshOptions(json.refreshOptions ?? []);
   }, [id]);
 
   const loadRows = useCallback(async () => {
@@ -143,10 +241,12 @@ export function CollecteView({ id }: { id: string }) {
   }, [loadMeta]);
 
   // Les lignes sont enregistrées à la fin de la collecte : on les charge une fois terminée
+  // (pendant une mise à jour automatique, les lignes existantes restent affichées)
+  const refreshing = collecte?.refreshing ?? false;
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- chargement de la page demandée
-    if (finished) loadRows();
-  }, [finished, loadRows]);
+    if (finished || refreshing) loadRows();
+  }, [finished, refreshing, loadRows]);
 
   // Suivi en direct tant que la collecte est dans la file ou en cours
   useEffect(() => {
@@ -199,6 +299,18 @@ export function CollecteView({ id }: { id: string }) {
     const value = raw === "" ? null : col?.type === "nombre" && !isNaN(Number(raw.replace(",", "."))) ? Number(raw.replace(",", ".")) : raw;
     await patchRow(editing.rowId, { data: { [editing.col]: value } });
     setEditing(null);
+  }
+
+  async function setRefresh(refresh: Collecte["refresh"]) {
+    const res = await fetch(`/api/collectes/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) return (json.error as string) ?? "Réglage impossible";
+    setCollecte((c) => c && { ...c, refresh: json.refresh, nextRefreshAt: json.nextRefreshAt });
+    return null;
   }
 
   async function remove() {
@@ -266,7 +378,7 @@ export function CollecteView({ id }: { id: string }) {
         <div className="card flex items-center gap-4 p-4">
           <Clock className="size-5 shrink-0 text-muted" />
           <div>
-            <p className="font-medium">Ta collecte est dans la file d&apos;attente</p>
+            <p className="font-medium">{collecte.refreshing ? "Mise à jour automatique dans la file d'attente" : "Ta collecte est dans la file d'attente"}</p>
             <p className="text-[13px] text-muted">
               {queuePosition && queuePosition > 1
                 ? `${queuePosition - 1} collecte(s) avant la tienne. Tu peux fermer cette page : tu seras notifié à la fin.`
@@ -282,7 +394,7 @@ export function CollecteView({ id }: { id: string }) {
             <Loader2 className="size-5 shrink-0 animate-spin text-info" />
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline justify-between gap-3">
-                <p className="font-medium">Luka collecte tes données…</p>
+                <p className="font-medium">{collecte.refreshing ? "Luka met à jour tes données…" : "Luka collecte tes données…"}</p>
                 <span className="text-[13px] font-medium tabular-nums text-info">{collecte.progress} %</span>
               </div>
               <p className="truncate text-[13px] text-muted">{lastLog?.message ?? "Démarrage"}</p>
@@ -310,6 +422,19 @@ export function CollecteView({ id }: { id: string }) {
       )}
 
       {error && <p className="rounded-lg bg-danger-soft px-4 py-3 text-[13px] text-danger">{error}</p>}
+
+      {(collecte.status === "done" || collecte.refreshing) && counts.total > 0 && (
+        <RefreshPanel
+          collecte={collecte}
+          options={refreshOptions}
+          onChange={setRefresh}
+          onShowChanges={() => {
+            setFilter("changements");
+            setPage(1);
+            tableTop.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+          }}
+        />
+      )}
 
       {counts.total > 0 && (
         <>
@@ -350,6 +475,7 @@ export function CollecteView({ id }: { id: string }) {
                 <option value="a_verifier">À vérifier</option>
                 <option value="valide">Validées</option>
                 <option value="rejete">Rejetées</option>
+                {collecte.lastChanges && <option value="changements">Changements (dernière mise à jour)</option>}
               </select>
             </div>
 
@@ -433,7 +559,19 @@ export function CollecteView({ id }: { id: string }) {
                               }}
                             />
                           ) : (
-                            formatValue(r.data[c.name], c.type)
+                            <>
+                              {formatValue(r.data[c.name], c.type)}
+                              {r.previous && c.name in r.previous && (
+                                <span className="mt-0.5 block text-xs text-muted line-through" title="Valeur avant la dernière mise à jour">
+                                  {r.previous[c.name] === null || r.previous[c.name] === "" ? "vide" : String(r.previous[c.name])}
+                                </span>
+                              )}
+                              {r.change && c.name === collecte.columns[0].name && (
+                                <span className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${CHANGE_BADGE[r.change].cls}`}>
+                                  {CHANGE_BADGE[r.change].label}
+                                </span>
+                              )}
+                            </>
                           )}
                         </td>
                       ))}
@@ -562,7 +700,7 @@ export function CollecteView({ id }: { id: string }) {
         </ol>
       </details>
 
-      {collecte.status !== "running" && (
+      {collecte.status !== "running" && !collecte.refreshing && (
         <div className="flex justify-end">
           {confirmDelete ? (
             <span className="flex flex-wrap items-center gap-2 text-[13px]">

@@ -13,6 +13,8 @@ import {
   describeColumns,
   enrichFromSocial,
   enrichFromWebsites,
+  failRefresh,
+  finishRefresh,
   type ExtractedRow,
   fold,
   keyOf,
@@ -76,8 +78,30 @@ async function planEnrichment(c: CollecteRecord, sample: ExtractedRow[], newCols
     const f = data.colonnes?.[col.name];
     if (!mapping[col.name] && typeof f === "string" && (PLACE_FIELDS as readonly string[]).includes(f)) mapping[col.name] = f as PlaceField;
   }
-  const zone = typeof data.zone === "string" && data.zone.trim().length > 1 ? data.zone.trim() : null;
+  // La ville guide la recherche et écarte les homonymes : si l'IA l'a omise, une question courte et dédiée
+  const zone = zoneOf(data.zone) ?? (await askZone(c, examples));
   return { zone, mapping };
+}
+
+function zoneOf(v: unknown): string | null {
+  if (v && typeof v === "object" && !Array.isArray(v)) v = Object.values(v).filter((x) => typeof x === "string").join(", ");
+  if (Array.isArray(v)) v = v[0];
+  return typeof v === "string" && v.trim().length > 1 && !/^(null|inconnu)/i.test(v.trim()) ? v.trim() : null;
+}
+
+async function askZone(c: CollecteRecord, examples: string) {
+  const { data } = await chatJson<{ zone?: unknown }>(
+    [
+      {
+        role: "system",
+        content: 'Réponds uniquement en JSON : {"zone": "Ville, Pays"}, ou {"zone": null} si aucun lieu n\'est indiqué ni évident.',
+      },
+      { role: "user", content: `Dans quelle ville (ou quel pays) se trouvent ces entités ?\nDescription : ${c.request}\nExemples :\n${examples}` },
+    ],
+    { userId: c.userId, collecteId: c.id, purpose: "plan" },
+    { maxTokens: 100 },
+  );
+  return zoneOf(data.zone);
 }
 
 /** Le nom trouvé correspond-il à celui de la ligne ? (mots en commun, accents et casse ignorés) */
@@ -323,6 +347,7 @@ export async function runEnrichment(c: CollecteRecord) {
         if (r.sourceTitle === "Rien trouvé") r.confidence = 0;
       }
     }
+    if (c.refreshing) return await finishRefresh(c, rows, budget?.spent ?? 0);
     await saveRows(c.id, rows);
 
     const filled = rows.filter((r) => newCols.some((col) => !isEmpty(r.data[col.name]))).length;
@@ -346,6 +371,7 @@ export async function runEnrichment(c: CollecteRecord) {
     await mailCollecteEnd(c, { rows: filled });
   } catch (e) {
     const message = (e as Error).message || "Erreur inconnue";
+    if (c.refreshing) return await failRefresh(c, message, budget?.spent ?? 0);
     await addLog(c.id, message, "error");
     await db
       .update(schema.collectes)

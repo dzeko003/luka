@@ -12,6 +12,7 @@ import type { SourceDocument } from "./connectors/types";
 import { chatJson } from "./llm";
 import { collecteMail, sendMail } from "./mailer";
 import { notify } from "./notifications";
+import { mergeRefresh, refreshDone, refreshReset } from "./refresh";
 
 export type Value = string | number | boolean | null;
 export type ExtractedRow = {
@@ -631,6 +632,38 @@ export async function saveRows(collecteId: string, rows: ExtractedRow[]) {
   }
 }
 
+async function llmTotals(collecteId: string) {
+  const [usage] = await db
+    .select({
+      calls: sql<number>`count(*)::int`,
+      tokens: sql<number>`coalesce(sum(${schema.llmUsage.promptTokens} + ${schema.llmUsage.completionTokens}), 0)::int`,
+    })
+    .from(schema.llmUsage)
+    .where(eq(schema.llmUsage.collecteId, collecteId));
+  return usage;
+}
+
+/** Fin d'une mise à jour automatique : les lignes sont comparées aux existantes au lieu d'être remplacées. */
+export async function finishRefresh(c: CollecteRecord, rows: ExtractedRow[], spent: number) {
+  const changes = await mergeRefresh(c, rows);
+  const { summary } = await refreshDone(c, changes);
+  await addLog(c.id, `Mise à jour terminée : ${summary}.`);
+  const usage = await llmTotals(c.id);
+  await db
+    .update(schema.collectes)
+    .set({ ...refreshReset(c), lastChanges: changes, llmCalls: usage.calls, tokensUsed: usage.tokens, costUsd: c.costUsd + spent })
+    .where(eq(schema.collectes.id, c.id));
+}
+
+/** Une mise à jour en échec ne touche pas aux lignes : la collecte reste consultable et sera retentée à la prochaine échéance. */
+export async function failRefresh(c: CollecteRecord, message: string, spent: number) {
+  await addLog(c.id, `Mise à jour impossible : ${message}. Tes lignes sont inchangées ; nouvel essai à la prochaine échéance.`, "warn");
+  await db
+    .update(schema.collectes)
+    .set({ ...refreshReset(c), costUsd: c.costUsd + spent })
+    .where(eq(schema.collectes.id, c.id));
+}
+
 /** Exécute une collecte déjà réservée par la file d'attente (statut « running »), voir worker.ts. */
 export async function runCollecte(collecteId: string) {
   const [c] = await db.select().from(schema.collectes).where(eq(schema.collectes.id, collecteId));
@@ -719,6 +752,7 @@ export async function runCollecte(collecteId: string) {
 
     // 4. Premium : pages Facebook et comptes Instagram publics des établissements
     if (budget && plan && budget.left >= 0.05) await enrichFromSocial(c, plan, finalRows, budget);
+    if (c.refreshing) return await finishRefresh(c, finalRows, budget?.spent ?? 0);
     await saveRows(c.id, finalRows);
 
     const [usage] = await db
@@ -749,6 +783,7 @@ export async function runCollecte(collecteId: string) {
     await mailCollecteEnd(c, { rows: finalRows.length });
   } catch (e) {
     const message = (e as Error).message || "Erreur inconnue";
+    if (c.refreshing) return await failRefresh(c, message, budget?.spent ?? 0);
     await addLog(c.id, message, "error");
     await db
       .update(schema.collectes)

@@ -104,6 +104,9 @@ export type ColumnDef = {
   fromFile?: boolean; // enrichissement : colonne du fichier importé (gardée telle quelle, jamais remplie)
 };
 
+/** Bilan de la dernière mise à jour automatique. */
+export type RefreshChanges = { nouveau: number; modifie: number; nonRetrouve: number };
+
 export type LogEntry = { at: string; message: string; level?: "info" | "warn" | "error" };
 
 export const collectes = pgTable(
@@ -131,9 +134,19 @@ export const collectes = pgTable(
     costUsd: real("cost_usd").notNull().default(0), // dépense des sources payantes (Apify), en dollars
     startedAt: timestamp("started_at"),
     finishedAt: timestamp("finished_at"),
+    // Mise à jour automatique : la collecte est relancée et les changements sont marqués sur ses lignes
+    refresh: text("refresh").notNull().default("aucune"), // aucune | hebdo | mensuelle
+    nextRefreshAt: timestamp("next_refresh_at"),
+    lastRefreshAt: timestamp("last_refresh_at"),
+    refreshing: boolean("refreshing").notNull().default(false), // l'exécution en cours est une mise à jour
+    lastChanges: jsonb("last_changes").$type<RefreshChanges>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (t) => [index("collectes_user_idx").on(t.userId, t.createdAt), index("collectes_queue_idx").on(t.status, t.createdAt)],
+  (t) => [
+    index("collectes_user_idx").on(t.userId, t.createdAt),
+    index("collectes_queue_idx").on(t.status, t.createdAt),
+    index("collectes_refresh_idx").on(t.nextRefreshAt),
+  ],
 );
 
 export const rows = pgTable(
@@ -149,6 +162,10 @@ export const rows = pgTable(
     confidence: real("confidence"), // 0 → 1
     status: text("status").notNull().default("a_verifier"), // a_verifier | valide | rejete
     position: integer("position").notNull().default(0),
+    // Mise à jour automatique : changement constaté lors de la dernière mise à jour, et valeurs d'avant
+    change: text("change"), // nouveau | modifie | non_retrouve
+    previous: jsonb("previous").$type<Record<string, string | number | boolean | null>>(),
+    edited: jsonb("edited").$type<string[]>().notNull().default([]), // colonnes corrigées à la main : jamais écrasées
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("rows_collecte_idx").on(t.collecteId, t.position)],

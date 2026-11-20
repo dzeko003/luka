@@ -31,8 +31,15 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (parsed.data.data) {
     const allowed = new Set(found.columns.map((c) => c.name));
     const data = { ...found.row.data };
-    for (const [k, v] of Object.entries(parsed.data.data)) if (allowed.has(k)) data[k] = v;
+    const edited = new Set(found.row.edited);
+    for (const [k, v] of Object.entries(parsed.data.data))
+      if (allowed.has(k)) {
+        data[k] = v;
+        edited.add(k);
+      }
     update.data = data;
+    // Une case corrigée à la main n'est plus jamais écrasée par une mise à jour automatique
+    update.edited = [...edited];
   }
   if (!Object.keys(update).length) return jsonError("Rien à modifier");
 

@@ -1,6 +1,8 @@
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, count, eq, lt, ne, sql } from "drizzle-orm";
+import { z } from "zod";
 import { db, schema } from "@/db";
 import { apiUser, getOwnedCollecte, jsonError } from "@/lib/api";
+import { isFrequency, nextRefreshDate, REFRESH_LABELS, refreshRules } from "@/lib/refresh";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -32,7 +34,8 @@ export async function GET(_req: Request, { params }: Ctx) {
   }
   // Le fichier importé (enrichissement) peut être lourd et n'est pas affiché : il ne part pas avec chaque rafraîchissement
   const { input, ...collecte } = c;
-  return Response.json({ collecte: { ...collecte, inputRows: input?.length ?? null }, counts, queuePosition });
+  const refreshOptions = refreshRules(user.plan).frequencies;
+  return Response.json({ collecte: { ...collecte, inputRows: input?.length ?? null }, counts, queuePosition, refreshOptions });
 }
 
 export async function DELETE(_req: Request, { params }: Ctx) {
@@ -40,8 +43,44 @@ export async function DELETE(_req: Request, { params }: Ctx) {
   if (!user) return jsonError("Connexion requise", 401);
   const c = await getOwnedCollecte((await params).id, user.id);
   if (!c) return jsonError("Collecte introuvable", 404);
-  if (c.status === "running") return jsonError("Attends la fin de la collecte");
+  if (c.status === "running" || c.refreshing) return jsonError("Attends la fin de la collecte");
   // Une collecte encore dans la file peut être annulée : elle est simplement supprimée
   await db.delete(schema.collectes).where(eq(schema.collectes.id, c.id));
   return new Response(null, { status: 204 });
+}
+
+const patchSchema = z.object({ refresh: z.enum(["aucune", "hebdo", "mensuelle"]) });
+
+/** Mise à jour automatique : jamais, chaque semaine ou chaque mois (selon la formule). */
+export async function PATCH(req: Request, { params }: Ctx) {
+  const user = await apiUser();
+  if (!user) return jsonError("Connexion requise", 401);
+  const c = await getOwnedCollecte((await params).id, user.id);
+  if (!c) return jsonError("Collecte introuvable", 404);
+  const parsed = patchSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return jsonError("Données invalides");
+  const { refresh } = parsed.data;
+
+  if (!isFrequency(refresh)) {
+    await db.update(schema.collectes).set({ refresh, nextRefreshAt: null }).where(eq(schema.collectes.id, c.id));
+    return Response.json({ refresh, nextRefreshAt: null });
+  }
+  if (c.status !== "done" && !c.refreshing) return jsonError("La mise à jour automatique se règle une fois la collecte terminée");
+  const rules = refreshRules(user.plan);
+  if (!rules.frequencies.includes(refresh))
+    return jsonError(`Avec ta formule, la mise à jour automatique est possible ${rules.frequencies.map((f) => REFRESH_LABELS[f]).join(" ou ")}. Premium permet chaque semaine.`, 403);
+  const [{ n }] = await db
+    .select({ n: count() })
+    .from(schema.collectes)
+    .where(and(eq(schema.collectes.userId, user.id), ne(schema.collectes.refresh, "aucune"), ne(schema.collectes.id, c.id)));
+  if (n >= rules.maxFollowed)
+    return jsonError(
+      `Ta formule permet de suivre ${rules.maxFollowed} collecte(s) à la fois. Désactive la mise à jour d'une autre collecte${user.plan === "premium" ? "" : ", ou passe en Premium (10 collectes suivies)"}.`,
+      403,
+    );
+  // L'échéance part de la dernière exécution : changer de fréquence ne relance pas tout de suite
+  const nextRefreshAt = nextRefreshDate(refresh, c.lastRefreshAt ?? c.finishedAt ?? new Date());
+  const due = nextRefreshAt < new Date() ? nextRefreshDate(refresh) : nextRefreshAt;
+  await db.update(schema.collectes).set({ refresh, nextRefreshAt: due }).where(eq(schema.collectes.id, c.id));
+  return Response.json({ refresh, nextRefreshAt: due });
 }
