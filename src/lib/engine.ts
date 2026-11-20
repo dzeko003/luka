@@ -14,6 +14,7 @@ import { collecteMail, sendMail } from "./mailer";
 import { notify } from "./notifications";
 import { cityOfZone, entityToPlace, findInCity } from "./kb";
 import { mergeRefresh, refreshDone, refreshReset } from "./refresh";
+import { reportError } from "./monitoring";
 
 export type Value = string | number | boolean | null;
 export type ExtractedRow = {
@@ -806,6 +807,7 @@ export async function runCollecte(collecteId: string) {
     await mailCollecteEnd(c, { rows: finalRows.length });
   } catch (e) {
     const message = (e as Error).message || "Erreur inconnue";
+    reportError(e, { where: c.refreshing ? "collecte.refresh" : "collecte", collecte: c.id, tier: c.tier });
     if (c.refreshing) return await failRefresh(c, message, budget?.spent ?? 0);
     await addLog(c.id, message, "error");
     await db

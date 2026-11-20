@@ -29,6 +29,7 @@ import {
 import { cityOfZone, entityToPlace, findByNames, kbKey } from "./kb";
 import { chatJson } from "./llm";
 import { notify } from "./notifications";
+import { reportError } from "./monitoring";
 
 /*
  * Enrichissement d'un fichier importé : les lignes sont celles de l'utilisateur, Luka complète
@@ -394,6 +395,7 @@ export async function runEnrichment(c: CollecteRecord) {
     await mailCollecteEnd(c, { rows: filled });
   } catch (e) {
     const message = (e as Error).message || "Erreur inconnue";
+    reportError(e, { where: "enrichissement", collecte: c.id, tier: c.tier });
     if (c.refreshing) return await failRefresh(c, message, budget?.spent ?? 0);
     await addLog(c.id, message, "error");
     await db

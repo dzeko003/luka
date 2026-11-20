@@ -4,6 +4,7 @@ import type { LogEntry } from "@/db/schema";
 import { limits } from "./config";
 import { runCollecte } from "./engine";
 import { queueDueRefreshes, refreshReset } from "./refresh";
+import { reportError } from "./monitoring";
 
 /**
  * File d'attente des collectes, stockée dans PostgreSQL (aucun service en plus).
@@ -84,6 +85,7 @@ async function runOne(id: string) {
   } catch (e) {
     // runCollecte gère ses erreurs ; ceci ne couvre que l'imprévu (base indisponible…)
     console.error("[worker] collecte", id, e);
+    reportError(e, { where: "worker.collecte", collecte: id });
     await db
       .update(schema.collectes)
       .set({ status: "failed", error: (e as Error).message, finishedAt: new Date() })
@@ -137,6 +139,7 @@ export function startWorker() {
       }
     } catch (e) {
       console.error("[worker]", (e as Error).message);
+      reportError(e, { where: "worker.tick" });
     } finally {
       setTimeout(tick, POLL_MS).unref();
     }

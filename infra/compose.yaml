@@ -55,6 +55,7 @@ services:
       <<: *database-url
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?}
       BETTER_AUTH_URL: https://${LUKA_DOMAIN:?}
+      LUKA_VERSION: ${LUKA_VERSION:?} # version signalée avec les erreurs (Sentry)
       LUKA_WORKER: "off" # les collectes tournent dans le service « worker »
     tmpfs:
       - /tmp
@@ -79,6 +80,7 @@ services:
       <<: *database-url
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?}
       BETTER_AUTH_URL: https://${LUKA_DOMAIN:?}
+      LUKA_VERSION: ${LUKA_VERSION:?} # version signalée avec les erreurs (Sentry)
       LUKA_WORKER: "on"
       NEXT_MANUAL_SIG_HANDLE: "true"
     tmpfs:
