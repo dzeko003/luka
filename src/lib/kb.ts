@@ -30,6 +30,12 @@ const sameValue = (a: unknown, b: unknown) => {
   return digits.test(x) && digits.test(y) && (x.replace("+", "").endsWith(y.replace("+", "")) || y.replace("+", "").endsWith(x.replace("+", "")));
 };
 
+/** Une ville écrite tout en minuscules ou en majuscules prend une majuscule à chaque mot (« pointe-noire » → « Pointe-Noire »). */
+const cityName = (raw: string) => {
+  const c = raw.trim().replace(/\s+/g, " ");
+  return c === c.toLowerCase() || c === c.toUpperCase() ? c.toLowerCase().replace(/(^|[\s-])(\p{L})/gu, (_, sep: string, l: string) => sep + l.toUpperCase()) : c;
+};
+
 /** Au-delà de cette durée, une valeur confirmée peut être remplacée par une valeur plus récente. */
 const STALE_MS = 180 * 86_400_000;
 
@@ -44,8 +50,8 @@ export async function upsertEntities(records: KbRecord[], src: string): Promise<
   let updated = 0;
   const now = new Date().toISOString();
   const valid = records
-    .map((r) => ({ ...r, name: String(r.fields.nom ?? "").trim(), city: (r.fields.ville ? String(r.fields.ville) : r.city).trim() }))
-    .filter((r) => r.name.length > 1 && r.city.length > 1);
+    .map((r) => ({ ...r, name: String(r.fields.nom ?? "").trim(), city: cityName(r.fields.ville ? String(r.fields.ville) : r.city) }))
+    .filter((r) => r.name.length > 1 && r.name.length <= 150 && r.city.length > 1);
 
   for (let i = 0; i < valid.length; i += 200) {
     const batch = valid.slice(i, i + 200);
