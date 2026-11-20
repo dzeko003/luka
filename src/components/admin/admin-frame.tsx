@@ -17,7 +17,7 @@ const nav = [
 const isActive = (href: string, pathname: string) => (href === "/admin" ? pathname === href : pathname.startsWith(href));
 
 /** Cadre de l'administration : barre latérale (sections, compte, thème) et fil d'Ariane, comme la maquette « User management ». */
-export function AdminFrame({ user, children }: { user: { name: string; email: string }; children: React.ReactNode }) {
+export function AdminFrame({ user, children }: { user: { name: string; email: string; image?: string | null }; children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -77,7 +77,7 @@ export function AdminFrame({ user, children }: { user: { name: string; email: st
           <ThemeToggle />
         </div>
         <div className="flex items-center gap-2.5 rounded-lg border border-border px-2 py-2">
-          <Avatar name={user.name || user.email} size={28} />
+          <Avatar name={user.name || user.email} image={user.image} size={28} />
           <div className="min-w-0 flex-1">
             <p className="truncate text-[12.5px] font-medium">{user.name}</p>
             <p className="truncate text-[11.5px] text-muted">{user.email}</p>

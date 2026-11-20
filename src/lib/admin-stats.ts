@@ -27,6 +27,7 @@ export type AdminUserRow = {
   id: string;
   name: string;
   email: string;
+  image: string | null;
   plan: string;
   role: string;
   blocked: boolean;
@@ -48,6 +49,7 @@ export async function listUsers(): Promise<AdminUserRow[]> {
       id: u.id,
       name: u.name,
       email: u.email,
+      image: u.image,
       plan: u.plan,
       role: u.role,
       blocked: u.blocked,

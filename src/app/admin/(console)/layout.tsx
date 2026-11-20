@@ -4,7 +4,7 @@ import { requireConsoleAdmin } from "@/lib/auth";
 
 async function Shell({ children }: { children: React.ReactNode }) {
   const user = await requireConsoleAdmin();
-  return <AdminFrame user={{ name: user.name, email: user.email }}>{children}</AdminFrame>;
+  return <AdminFrame user={{ name: user.name, email: user.email, image: user.image }}>{children}</AdminFrame>;
 }
 
 function ShellFallback() {

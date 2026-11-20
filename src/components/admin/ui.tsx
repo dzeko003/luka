@@ -33,7 +33,12 @@ export function Badge({ tone = "neutral", children }: { tone?: Tone; children: R
 
 const avatarColors = ["#7c5cff", "#2dd4bf", "#f472b6", "#f59e0b", "#60a5fa", "#a3e635", "#fb7185", "#c084fc"];
 
-export function Avatar({ name, size = 24 }: { name: string; size?: number }) {
+export function Avatar({ name, image, size = 24 }: { name: string; image?: string | null; size?: number }) {
+  if (image)
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- photo Google, affichée telle quelle
+      <img src={image} alt="" aria-hidden="true" width={size} height={size} referrerPolicy="no-referrer" className="shrink-0 rounded-full object-cover" style={{ width: size, height: size }} />
+    );
   const initials =
     name
       .trim()
