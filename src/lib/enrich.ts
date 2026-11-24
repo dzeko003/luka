@@ -220,8 +220,17 @@ function mentions(text: string, name: string, city: string) {
 
 type RowDocs = { row: ExtractedRow; id: string; docs: SourceDocument[] };
 
-/** Recherche web : une recherche par ligne (3 en parallèle), puis l'IA lit les pages qui citent l'établissement. */
-async function fromWeb(c: CollecteRecord, rows: ExtractedRow[], keyCol: string, fileCols: ColumnDef[], newCols: ColumnDef[], zone: string | null) {
+/** Recherche web : une recherche par ligne (3 en parallèle), puis l'IA lit les pages qui citent l'établissement.
+ *  Sert aussi aux collectes, pour les lieux sans contact (`track` à false : la progression n'est pas modifiée). */
+export async function fromWeb(
+  c: CollecteRecord,
+  rows: ExtractedRow[],
+  keyCol: string,
+  fileCols: ColumnDef[],
+  newCols: ColumnDef[],
+  zone: string | null,
+  track = true,
+) {
   const todo = rows.filter((r) => !isEmpty(r.data[keyCol]) && newCols.some((col) => isEmpty(r.data[col.name])));
   if (!todo.length) return;
   await addLog(c.id, `Recherche web : ${todo.length} ligne(s) à compléter…`);
@@ -249,7 +258,7 @@ async function fromWeb(c: CollecteRecord, rows: ExtractedRow[], keyCol: string, 
       } catch (e) {
         await addLog(c.id, `Recherche « ${query.slice(0, 60)} » ignorée : ${(e as Error).message}`, "warn");
       }
-      if (i % 5 === 4) await setProgress(c.id, 40 + (25 * i) / todo.length);
+      if (track && i % 5 === 4) await setProgress(c.id, 40 + (25 * i) / todo.length);
     }
   };
   await Promise.all(Array.from({ length: Math.min(3, todo.length) }, worker));
@@ -263,10 +272,18 @@ async function fromWeb(c: CollecteRecord, rows: ExtractedRow[], keyCol: string, 
     } catch (e) {
       await addLog(c.id, `Lecture de pages ignorée : ${(e as Error).message}`, "warn");
     }
-    await setProgress(c.id, 65 + (25 * (i + batch.length)) / searched.length);
+    if (track) await setProgress(c.id, 65 + (25 * (i + batch.length)) / searched.length);
   }
   await addLog(c.id, `Recherche web : ${completed} ligne(s) complétée(s).`);
 }
+
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "page web";
+  }
+};
 
 type RawAnswer = { id?: string; values?: Record<string, unknown>; source?: number | null; confiance?: number };
 
@@ -315,11 +332,18 @@ async function extractForRows(c: CollecteRecord, batch: RowDocs[], keyCol: strin
     completed++;
     const doc = typeof a.source === "number" ? b.docs[a.source - 1] : undefined;
     const conf = typeof a.confiance === "number" ? Math.max(0, Math.min(1, a.confiance)) : 0.5;
-    if (!b.row.sourceUrl && doc) {
-      b.row.sourceUrl = doc.url;
-      b.row.sourceTitle = doc.title;
+    const found = doc ? conf : Math.min(conf, 0.4);
+    if (b.row.sourceUrl) {
+      // La ligne avait déjà une source : on note la page web en plus, et la confiance suit la moins sûre des deux
+      if (doc?.url) b.row.sourceTitle = `${b.row.sourceTitle ?? b.row.sourceUrl} + ${hostOf(doc.url)}`;
+      b.row.confidence = Math.min(b.row.confidence, found);
+    } else {
+      if (doc) {
+        b.row.sourceUrl = doc.url;
+        b.row.sourceTitle = doc.title;
+      }
+      b.row.confidence = Math.max(b.row.confidence, found);
     }
-    b.row.confidence = Math.max(b.row.confidence, doc ? conf : Math.min(conf, 0.4));
   }
   return completed;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Database, ExternalLink, HeartHandshake, LayoutDashboard, ListChecks, LogOut, Menu, ShieldCheck, Users } from "lucide-react";
+import { Database, ExternalLink, HeartHandshake, LayoutDashboard, ListChecks, LogOut, Menu, ShieldCheck, SlidersHorizontal, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -14,6 +14,7 @@ const nav = [
   { href: "/admin/collectes", label: "Collectes", icon: ListChecks },
   { href: "/admin/contributions", label: "Contributions", icon: HeartHandshake },
   { href: "/admin/base", label: "Base Luka", icon: Database },
+  { href: "/admin/reglages", label: "Réglages", icon: SlidersHorizontal },
 ];
 
 const isActive = (href: string, pathname: string) => (href === "/admin" ? pathname === href : pathname.startsWith(href));

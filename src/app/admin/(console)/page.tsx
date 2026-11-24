@@ -8,6 +8,7 @@ import { getOverview, listCollectes } from "@/lib/admin-stats";
 import { db, schema } from "@/db";
 import { requireConsoleAdmin } from "@/lib/auth";
 import { limits } from "@/lib/config";
+import { loadSettings } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "Vue d'ensemble" };
 
@@ -69,6 +70,7 @@ function ActivityChart({ series }: { series: { day: string; visits: number; logi
 
 export default async function Page() {
   await requireConsoleAdmin();
+  await loadSettings();
   const [o, recent, [kb], [contrib]] = await Promise.all([
     getOverview(),
     listCollectes({ limit: 8 }),

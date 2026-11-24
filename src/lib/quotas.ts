@@ -1,6 +1,7 @@
 import { and, count, eq, gte, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { limits, tierLimits } from "./config";
+import { loadSettings } from "./settings";
 
 const startOfDayUtc = () => {
   const d = new Date();
@@ -27,6 +28,7 @@ async function globalLlmCallsToday() {
 
 /** Vérifie toutes les limites avant de lancer une collecte (selon la formule de l'utilisateur). */
 export async function checkCollecteQuota(user: { id: string; blocked?: boolean | null; plan?: string | null }): Promise<QuotaStatus> {
+  await loadSettings();
   const limitPerDay = tierLimits(user.plan).collectesPerDay;
   const [{ n: usedToday }] = await db
     .select({ n: count() })
@@ -53,6 +55,7 @@ export async function checkCollecteQuota(user: { id: string; blocked?: boolean |
 
 /** Limite les suggestions de colonnes par l'IA (elles consomment aussi le quota). */
 export async function checkSuggestQuota(userId: string): Promise<{ ok: boolean; reason?: string }> {
+  await loadSettings();
   const [{ n }] = await db
     .select({ n: count() })
     .from(schema.llmUsage)
