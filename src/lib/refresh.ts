@@ -4,6 +4,7 @@ import type { ColumnDef, LogEntry, RefreshChanges } from "@/db/schema";
 import { limits, type RefreshFrequency } from "./config";
 import { refreshMail, sendMail } from "./mailer";
 import { notify } from "./notifications";
+import { loadSettings } from "./settings";
 
 /*
  * Mise à jour automatique d'une collecte : à l'échéance, le travailleur relance la même demande, puis
@@ -209,6 +210,7 @@ const startOfDayUtc = () => {
  * Les règles de la formule sont revérifiées ici : un compte repassé en gratuit garde une seule collecte suivie, chaque mois.
  */
 export async function queueDueRefreshes() {
+  await loadSettings();
   const due = await db
     .select({ c: schema.collectes, plan: schema.user.plan, blocked: schema.user.blocked })
     .from(schema.collectes)

@@ -15,12 +15,13 @@ import { notify } from "./notifications";
 import { cityOfZone, entityToPlace, findInCity } from "./kb";
 import { mergeRefresh, refreshDone, refreshReset } from "./refresh";
 import { reportError } from "./monitoring";
+import { loadSettings } from "./settings";
 
 export type Value = string | number | boolean | null;
 export type ExtractedRow = {
   data: Record<string, Value>;
   /** Liens vers les réseaux sociaux, gardés même sans colonne dédiée (pour l'enrichissement). */
-  links?: { facebook?: string; instagram?: string };
+  links?: { facebook?: string; instagram?: string; website?: string };
   /** Coordonnées GPS, gardées même sans colonne dédiée (pour retrouver arrondissement et quartier). */
   coords?: { lat: number; lon: number };
   sourceUrl: string | null;
@@ -138,7 +139,11 @@ export function placeToRow(c: CollecteRecord, plan: PlacesPlan, p: Place, source
     const field = plan.mapping[col.name];
     data[col.name] = field ? normalizeValue(p.fields[field], col.type) : null;
   }
-  const links = { facebook: p.fields.facebook as string | undefined, instagram: p.fields.instagram as string | undefined };
+  const links = {
+    facebook: p.fields.facebook as string | undefined,
+    instagram: p.fields.instagram as string | undefined,
+    website: p.fields.site_web as string | undefined,
+  };
   const lat = Number(p.fields.latitude);
   const lon = Number(p.fields.longitude);
   const coords = Number.isFinite(lat) && Number.isFinite(lon) && (lat || lon) ? { lat, lon } : undefined;
@@ -346,17 +351,22 @@ function contactKind(col: ColumnDef): ContactKind | null {
 export async function enrichFromWebsites(c: CollecteRecord, rows: ExtractedRow[]) {
   const kinds = new Map(c.columns.map((col) => [col.name, contactKind(col)]));
   const siteCol = c.columns.find((col) => kinds.get(col.name) === "site_web")?.name;
-  const wanted = c.columns.filter((col) => {
+  const wanted = c.columns.filter((col, i) => {
     const k = kinds.get(col.name);
-    return k && k !== "site_web";
+    return i > 0 && k && k !== "site_web";
   });
-  if (!siteCol || !wanted.length) return;
+  if (!wanted.length) return;
 
   const isEmpty = (v: Value) => v === null || v === "";
+  // Le site vient de sa colonne ou, sans colonne « Site web », du lien gardé par la source (OpenStreetMap, Google Maps…)
+  const siteOf = (r: ExtractedRow) => {
+    const v = siteCol ? r.data[siteCol] : null;
+    return typeof v === "string" && v ? v : r.links?.website;
+  };
 
   // Un « site web » qui est en réalité une page Facebook ou Instagram va dans la bonne colonne
   for (const r of rows) {
-    const site = r.data[siteCol];
+    const site = siteOf(r);
     if (typeof site !== "string") continue;
     const kind = /facebook\.com|fb\.com/i.test(site) ? "facebook" : /instagram\.com/i.test(site) ? "instagram" : null;
     const col = kind && wanted.find((w) => kinds.get(w.name) === kind);
@@ -364,7 +374,7 @@ export async function enrichFromWebsites(c: CollecteRecord, rows: ExtractedRow[]
   }
 
   const todo = rows.filter((r) => {
-    const site = r.data[siteCol];
+    const site = siteOf(r);
     return typeof site === "string" && /\./.test(site) && !/facebook\.com|instagram\.com/i.test(site) && wanted.some((col) => isEmpty(r.data[col.name]));
   });
   const batch = todo.slice(0, tierLimits(c.tier).maxEnrichSites);
@@ -378,9 +388,9 @@ export async function enrichFromWebsites(c: CollecteRecord, rows: ExtractedRow[]
     while (cursor < batch.length) {
       const row = batch[cursor++];
       try {
-        const contacts = await readWebsiteContacts(String(row.data[siteCol]));
+        const contacts = await readWebsiteContacts(String(siteOf(row)));
         if (!contacts) continue;
-        row.links = { facebook: row.links?.facebook ?? contacts.facebook, instagram: row.links?.instagram ?? contacts.instagram };
+        row.links = { ...row.links, facebook: row.links?.facebook ?? contacts.facebook, instagram: row.links?.instagram ?? contacts.instagram };
         let changed = false;
         for (const col of wanted) {
           const value = contacts[kinds.get(col.name) as keyof WebsiteContacts];
@@ -401,6 +411,27 @@ export async function enrichFromWebsites(c: CollecteRecord, rows: ExtractedRow[]
   };
   await Promise.all(Array.from({ length: Math.min(4, batch.length) }, worker));
   await addLog(c.id, `Sites web : ${completed} ligne(s) complétée(s).`);
+}
+
+/** Lieux à qui il manque des contacts : une recherche web à leur nom (plafonnée selon la formule), puis l'IA lit les pages qui les citent. */
+async function searchMissingContacts(c: CollecteRecord, plan: PlacesPlan, rows: ExtractedRow[]) {
+  const keyCol = c.columns[0].name;
+  const contactCols = c.columns.filter((col) => col.name !== keyCol && contactKind(col));
+  const max = tierLimits(c.tier).maxContactSearches;
+  if (!tavilyKey || !contactCols.length || max <= 0) return;
+
+  const isEmpty = (v: Value) => v === null || v === "";
+  const filled = (r: ExtractedRow) => contactCols.filter((col) => !isEmpty(r.data[col.name])).length;
+  // Les lieux sans aucun contact passent en premier
+  const todo = rows
+    .filter((r) => !isEmpty(r.data[keyCol]) && filled(r) < contactCols.length)
+    .sort((a, b) => filled(a) - filled(b))
+    .slice(0, max);
+  if (!todo.length) return;
+
+  const { fromWeb } = await import("./enrich");
+  const otherCols = c.columns.filter((col) => !contactCols.includes(col));
+  await fromWeb(c, todo, keyCol, otherCols, contactCols, plan.zones[0] ?? null, false);
 }
 
 type RawRow = { values?: Record<string, unknown>; source?: number | null; confiance?: number };
@@ -587,7 +618,12 @@ function mergeInto(dup: ExtractedRow, row: ExtractedRow) {
     if ((dup.data[col] === null || dup.data[col] === "") && val !== null) dup.data[col] = val;
   }
   if (!dup.coords && row.coords) dup.coords = row.coords;
-  if (row.links) dup.links = { facebook: dup.links?.facebook ?? row.links.facebook, instagram: dup.links?.instagram ?? row.links.instagram };
+  if (row.links)
+    dup.links = {
+      facebook: dup.links?.facebook ?? row.links.facebook,
+      instagram: dup.links?.instagram ?? row.links.instagram,
+      website: dup.links?.website ?? row.links.website,
+    };
   if (!dup.sourceUrl && row.sourceUrl) {
     dup.sourceUrl = row.sourceUrl;
     dup.sourceTitle = row.sourceTitle;
@@ -688,6 +724,7 @@ export async function failRefresh(c: CollecteRecord, message: string, spent: num
 export async function runCollecte(collecteId: string) {
   const [c] = await db.select().from(schema.collectes).where(eq(schema.collectes.id, collecteId));
   if (!c || c.status !== "running") return;
+  await loadSettings();
   // Enrichissement d'un fichier importé : autre déroulé, mêmes sources (import tardif : évite une dépendance circulaire)
   if (c.kind === "enrichissement") return (await import("./enrich")).runEnrichment(c);
 
@@ -772,6 +809,7 @@ export async function runCollecte(collecteId: string) {
 
     // 3. Les sites web des établissements complètent contacts et réseaux sociaux
     await enrichFromWebsites(c, finalRows);
+    if (plan) await searchMissingContacts(c, plan, finalRows);
     if (plan) await enrichFromCoordinates(c, plan, finalRows);
 
     // 4. Premium : pages Facebook et comptes Instagram publics des établissements

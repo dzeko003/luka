@@ -20,6 +20,8 @@ export const limits = {
     maxReverseGeocode: num(process.env.FREE_MAX_REVERSE_GEOCODE, 200),
     /** Enrichissement d'un fichier : lignes complétées au maximum (une recherche web par ligne). */
     maxEnrichRows: num(process.env.FREE_MAX_ENRICH_ROWS, 20),
+    /** Lieux sans contact cherchés sur le web à leur nom, par collecte (une recherche et un appel IA chacun). */
+    maxContactSearches: num(process.env.FREE_MAX_CONTACT_SEARCHES, 20),
   },
   /** Premium : sources payantes (Google Maps et réseaux sociaux via Apify), volumes plus élevés. */
   premium: {
@@ -31,6 +33,7 @@ export const limits = {
     maxEnrichSites: num(process.env.PREMIUM_MAX_ENRICH_SITES, 200),
     maxReverseGeocode: num(process.env.PREMIUM_MAX_REVERSE_GEOCODE, 1000),
     maxEnrichRows: num(process.env.PREMIUM_MAX_ENRICH_ROWS, 300),
+    maxContactSearches: num(process.env.PREMIUM_MAX_CONTACT_SEARCHES, 20),
   },
   globalLlmCallsPerDay: num(process.env.GLOBAL_LLM_CALLS_PER_DAY, 500),
   maxConcurrentPerUser: 1,

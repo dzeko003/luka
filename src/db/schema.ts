@@ -306,3 +306,12 @@ export const contributions = pgTable(
   },
   (t) => [index("contributions_status_idx").on(t.status, t.createdAt), index("contributions_user_idx").on(t.userId)],
 );
+
+/* Réglages modifiables depuis la console d'administration (limites des formules, plafonds de dépense).
+   Une clé absente reprend la valeur par défaut, lue dans l'environnement. */
+export const settings = pgTable("settings", {
+  key: text("key").primaryKey(),
+  value: real("value").notNull(),
+  updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
