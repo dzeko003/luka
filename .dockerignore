@@ -3,6 +3,6 @@ node_modules
 .git
 .env*
 !.env.example
-infra
+deploy
 docker-compose.yml
 *.log
