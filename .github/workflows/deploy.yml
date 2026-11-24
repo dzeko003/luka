@@ -1,0 +1,72 @@
+# Mise en production : après chaque fusion sur main, une fois la Vérification réussie.
+# Peut aussi être relancé à la main (onglet Actions → Déploiement → Run workflow), toujours depuis main.
+# Configuration : infra/README.md, section « Déploiement automatique ».
+name: Déploiement
+
+on:
+  workflow_run:
+    workflows: [Vérification]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Un seul déploiement à la fois ; les suivants attendent (jamais annulés en cours de route)
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deployer:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: production
+      url: https://luka.berenismassamba.com
+    env:
+      DOMAIN: luka.berenismassamba.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Le commit vérifié (workflow_run), sinon le dernier commit de main
+          ref: ${{ github.event.workflow_run.head_sha || 'main' }}
+
+      - name: Clé SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          [ -n "$SSH_KEY" ] && [ -n "$KNOWN_HOSTS" ] || { echo "::error::Secrets DEPLOY_SSH_KEY / DEPLOY_KNOWN_HOSTS manquants (infra/README.md)."; exit 1; }
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+      - name: Envoi et déploiement
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          version=$(git rev-parse --short HEAD)
+          echo "Version $version"
+          git archive --format=tar.gz HEAD |
+            ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+                -o ServerAliveInterval=30 "$HOST" "$version $DOMAIN"
+
+      - name: Vérification en ligne
+        run: |
+          version=$(git rev-parse --short HEAD)
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 15 "https://$DOMAIN/" >/dev/null; then echo "Site joignable ($version)."; exit 0; fi
+            sleep 10
+          done
+          echo "::error::Le site ne répond pas après le déploiement."
+          exit 1
+
+      - name: Nettoyage
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

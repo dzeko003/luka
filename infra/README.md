@@ -19,18 +19,41 @@ Le Caddy commun (`/srv/edge`) sert le domaine et gère le HTTPS ; Luka y dépose
 
 ## Déployer
 
-Depuis ton poste, à la racine du projet :
+Les déploiements passent par GitHub Actions :
+
+1. tu fusionnes une PR sur `main` ;
+2. le workflow **Vérification** tourne (types, lint, migrations, build) ;
+3. s'il réussit, le workflow **Déploiement** envoie le code de ce commit au serveur
+   (`git archive` : seulement les fichiers commités) et lance `deploy.sh`.
+
+`deploy.sh` construit les images, applique les migrations, remplace l'application
+(retour automatique à la version précédente si elle ne démarre pas) et publie le site dans Caddy.
+Les collectes en cours ne sont pas interrompues : le nouveau `worker` démarre à côté de l'ancien,
+qui termine ses collectes (30 min au plus) puis s'arrête en arrière-plan.
+
+Redéployer sans nouveau commit : onglet **Actions → Déploiement → Run workflow** (toujours `main`).
+Suivi : onglet **Actions**, ou **Environments → production** sur la page du dépôt.
+
+### Déploiement automatique : mise en place (une seule fois)
+
+```bash
+infra/setup-ci.sh
+```
+
+Le script crée une clé SSH réservée à GitHub, l'installe sur le serveur pour l'utilisateur `deploy`
+et enregistre les secrets du dépôt (`DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_KNOWN_HOSTS`).
+Dans `authorized_keys`, la clé est limitée à `command="/srv/luka/ci-receive.sh",restrict` :
+elle ne peut que recevoir une archive du code et lancer `deploy.sh`, sans shell ni redirection de port.
+Relancer le script remplace la clé.
+
+### Secours : déployer depuis ton poste
 
 ```bash
 infra/publish.sh                      # domaine par défaut : luka.berenismassamba.com
 ```
 
-Le script envoie le code, construit les images sur le serveur, applique les migrations,
-remplace l'application (retour automatique à la version précédente si elle ne démarre pas)
-et publie le site dans Caddy.
-
-Les collectes en cours ne sont pas interrompues : le nouveau `worker` démarre à côté de l'ancien,
-qui termine ses collectes (30 min au plus) puis s'arrête en arrière-plan.
+Le script refuse de publier autre chose que `main` à jour avec GitHub et sans modification en cours
+(`LUKA_FORCE=1 infra/publish.sh` pour passer outre, en cas d'urgence seulement).
 
 ## Exploitation
 
