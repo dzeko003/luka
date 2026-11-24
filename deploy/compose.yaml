@@ -1,6 +1,6 @@
-# Production de Luka sur le VPS, dans /srv/luka (voir infra/README.md).
-# .release : version et domaine · secrets.env : mots de passe générés sur le serveur
-# web.env : clés des services (IA, recherche web…), jamais versionné.
+# Production de Luka, sur le serveur dans ~/luka (voir deploy/README.md).
+# .env : secrets et clés des services (jamais versionné) · .version : image en ligne (écrit par deploy.sh)
+# Traefik (~/traefik) sert le domaine en HTTPS d'après les labels du service web.
 
 name: luka
 
@@ -16,8 +16,21 @@ x-hardening: &hardening
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
 
-x-database-url: &database-url
+x-app: &app
+  <<: [*logging, *hardening]
+  image: ghcr.io/dzeko003/luka-web:${LUKA_VERSION:?}
+  env_file: [.env]
+  tmpfs:
+    - /tmp
+    - /app/.next/cache:uid=1000,gid=1000
+  depends_on:
+    db: { condition: service_healthy }
+  restart: unless-stopped
+
+x-app-env: &app-env
   DATABASE_URL: postgres://luka:${POSTGRES_PASSWORD:?}@db:5432/luka
+  BETTER_AUTH_URL: https://${LUKA_DOMAIN:?}
+  LUKA_VERSION: ${LUKA_VERSION:?} # version signalée avec les erreurs (Sentry)
 
 services:
   db:
@@ -37,10 +50,12 @@ services:
     networks: [data]
     restart: unless-stopped
 
+  # Lancé par deploy.sh avant chaque mise en ligne, puis s'arrête
   migrate:
     <<: [*logging, *hardening]
-    image: luka-migrate:${LUKA_VERSION:?}
-    environment: *database-url
+    image: ghcr.io/dzeko003/luka-migrate:${LUKA_VERSION:?}
+    environment:
+      DATABASE_URL: postgres://luka:${POSTGRES_PASSWORD:?}@db:5432/luka
     depends_on:
       db: { condition: service_healthy }
     networks: [data]
@@ -48,52 +63,31 @@ services:
     profiles: [tools]
 
   web:
-    <<: [*logging, *hardening]
-    image: luka-web:${LUKA_VERSION:?}
-    env_file: [web.env]
+    <<: *app
     environment:
-      <<: *database-url
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?}
-      BETTER_AUTH_URL: https://${LUKA_DOMAIN:?}
-      LUKA_VERSION: ${LUKA_VERSION:?} # version signalée avec les erreurs (Sentry)
+      <<: *app-env
       LUKA_WORKER: "off" # les collectes tournent dans le service « worker »
-    tmpfs:
-      - /tmp
-      - /app/.next/cache:uid=1000,gid=1000
-    depends_on:
-      db: { condition: service_healthy }
-    # Le proxy commun du serveur (/srv/edge) joint l'app sous ce nom ; aucun port n'est ouvert.
-    networks:
-      edge:
-        aliases: [luka-web]
-      data:
-    restart: unless-stopped
+    networks: [edge, data]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.luka.rule=Host(`${LUKA_DOMAIN:?}`)
+      - traefik.http.routers.luka.entrypoints=websecure
+      - traefik.http.routers.luka.middlewares=securite@file
+      - traefik.http.services.luka.loadbalancer.server.port=3000
 
   # Travailleur des collectes : même image que le site, sans trafic web.
-  # À l'arrêt, il termine ses collectes en cours (30 min au plus) au lieu de les interrompre.
-  # deploy.sh démarre le nouveau travailleur avant d'arrêter l'ancien.
+  # À l'arrêt, il termine ses collectes en cours (30 min au plus) ; deploy.sh démarre le nouveau avant.
   worker:
-    <<: [*logging, *hardening]
-    image: luka-web:${LUKA_VERSION:?}
-    env_file: [web.env]
+    <<: *app
     environment:
-      <<: *database-url
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?}
-      BETTER_AUTH_URL: https://${LUKA_DOMAIN:?}
-      LUKA_VERSION: ${LUKA_VERSION:?} # version signalée avec les erreurs (Sentry)
+      <<: *app-env
       LUKA_WORKER: "on"
       NEXT_MANUAL_SIG_HANDLE: "true"
-    tmpfs:
-      - /tmp
-      - /app/.next/cache:uid=1000,gid=1000
-    depends_on:
-      db: { condition: service_healthy }
     # data : la base ; egress : accès à Internet (IA, Google Maps, sites web)
     networks: [data, egress]
     stop_grace_period: 30m
-    restart: unless-stopped
 
-  # Sauvegarde quotidienne de la base dans /srv/luka/backups (14 jours conservés)
+  # Sauvegarde quotidienne de la base dans ~/luka/backups (14 jours conservés)
   backup:
     <<: *logging
     image: postgres:17-alpine

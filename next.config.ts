@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Serveur autonome pour l'image Docker (infra/)
+  // Serveur autonome pour l'image Docker (deploy/)
   output: "standalone",
   cacheComponents: true,
   // Base GeoLite2 lue sur le disque (pays des visiteurs) : paquet chargé tel quel et fichiers de données copiés

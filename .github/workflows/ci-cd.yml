@@ -1,0 +1,146 @@
+# CI : à chaque PR et sur main — types, lint, migrations, build de production.
+# CD : sur main seulement, si la CI passe — images sur ghcr.io, puis mise en ligne sur le serveur.
+# Mise en place et exploitation : deploy/README.md.
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  # Sur main, une mise en ligne n'est jamais interrompue par la suivante
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+      DATABASE_URL: postgres://luka:luka@localhost:5432/luka
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: luka
+          POSTGRES_PASSWORD: luka
+          POSTGRES_DB: luka
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U luka -d luka"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Installation
+        run: npm ci --ignore-scripts
+      - name: Types
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Migrations à jour avec le schéma
+        # Échoue si src/db/schema.ts a changé sans nouvelle migration (npm run db:generate)
+        run: |
+          npx drizzle-kit generate --name=verification
+          if [ -n "$(git status --porcelain drizzle)" ]; then
+            echo "::error::Le schéma a changé sans migration : lance npm run db:generate et commite le résultat."
+            git status --short drizzle
+            exit 1
+          fi
+      - name: Migrations sur une base vide
+        run: node scripts/migrate.mjs
+      - name: Build de production
+        run: npm run build
+
+  images:
+    name: CD · Images
+    needs: ci
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.VPS_HOST != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Image du site et du travailleur
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runner
+          push: true
+          tags: ghcr.io/dzeko003/luka-web:${{ github.sha }}
+          # Publiques par nature : inscrites dans le code envoyé au navigateur
+          build-args: |
+            NEXT_PUBLIC_TURNSTILE_SITE_KEY=${{ vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
+            NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
+            NEXT_PUBLIC_LUKA_VERSION=${{ github.sha }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+      - name: Image des migrations
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: migrator
+          push: true
+          tags: ghcr.io/dzeko003/luka-migrate:${{ github.sha }}
+          cache-from: type=gha,scope=migrate
+          cache-to: type=gha,scope=migrate,mode=max
+
+  deploy:
+    name: CD · Mise en ligne
+    needs: images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    environment:
+      name: production
+      url: https://${{ vars.LUKA_DOMAIN }}
+    env:
+      VPS_HOST: ${{ vars.VPS_HOST }}
+      LUKA_DOMAIN: ${{ vars.LUKA_DOMAIN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Accès SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" >~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" >~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Mise en ligne
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          { printf '%s\n' "$REGISTRY_TOKEN"; tar -czf - -C deploy compose.yaml deploy.sh; } |
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ServerAliveInterval=30 \
+              "berenis@$VPS_HOST" "$GITHUB_SHA $GITHUB_ACTOR"
+      - name: Vérification depuis l'extérieur
+        run: curl -fsS --retry 12 --retry-delay 5 --retry-all-errors -o /dev/null "https://$LUKA_DOMAIN/api/health"
+      - name: Nettoyage
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
