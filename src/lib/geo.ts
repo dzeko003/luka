@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import geoip from "geoip-country";
 
-/** Adresse IP du visiteur : premier maillon de X-Forwarded-For (posé par Caddy), sinon X-Real-IP. */
+/** Adresse IP du visiteur : premier maillon de X-Forwarded-For (posé par Traefik), sinon X-Real-IP. */
 export function clientIp(headers: Headers): string | null {
   const fwd = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   return fwd || headers.get("x-real-ip") || null;
