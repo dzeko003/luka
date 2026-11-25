@@ -144,3 +144,22 @@ jobs:
       - name: Nettoyage
         if: always()
         run: rm -f ~/.ssh/id_ed25519
+
+  cleanup:
+    name: CD · Nettoyage des images
+    needs: deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Un échec du nettoyage ne doit jamais faire échouer une mise en ligne réussie
+    continue-on-error: true
+    permissions:
+      packages: write
+    steps:
+      # Garde les 20 dernières versions de chaque image sur ghcr.io (assez pour revenir en arrière),
+      # et supprime les morceaux sans étiquette qui ne servent plus à aucune version gardée.
+      - uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          packages: luka-web,luka-migrate
+          keep-n-tagged: 20
+          delete-untagged: true
+          token: ${{ github.token }}
