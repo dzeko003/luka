@@ -1,6 +1,7 @@
 import { and, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import type { ColumnDef, KbValue } from "@/db/schema";
+import type { Work } from "./connectors/openalex";
 import { placeFieldOf, type Place, type PlaceField } from "./connectors/places";
 import {
   acceptsField,
@@ -275,4 +276,53 @@ export async function linkEntities(fromId: string, relation: Relation, toId: str
       target: [l.fromId, l.relation, l.toId],
       set: { confirmations: sql`${l.confirmations} + 1`, updatedAt: new Date() },
     });
+}
+
+/**
+ * Verse dans la base des publications trouvées sur OpenAlex (données ouvertes, CC0), avec leurs auteurs
+ * (identité professionnelle seulement) et leurs institutions, reliés entre eux.
+ */
+export async function ingestWorks(works: Work[]) {
+  const src = "openalex";
+  const orgIds = new Map<string, string | null>();
+  for (const w of works) {
+    const f = w.fields;
+    if (!f.titre) continue;
+    const pub = await upsertEntity(
+      {
+        type: "publication",
+        name: String(f.titre),
+        category: f.discipline ? String(f.discipline) : null,
+        fields: { date: f.date, annee: f.annee, revue: f.revue, doi: f.doi, discipline: f.discipline, resume: f.resume, langue: f.langue, type_document: f.type_document, lien: f.lien, openalex: w.openalex },
+        url: w.url,
+      },
+      src,
+    );
+    if (!pub) continue;
+    // Au-delà de 20 auteurs (grands consortiums), seuls les premiers sont gardés
+    for (const a of w.authors.slice(0, 20)) {
+      const person = await upsertEntity(
+        {
+          type: "personne",
+          name: a.name,
+          category: f.discipline ? String(f.discipline) : null,
+          fields: { orcid: a.orcid, openalex: a.openalex, affiliation: a.institutions[0]?.name, discipline: f.discipline },
+          url: a.orcid ? `https://orcid.org/${a.orcid}` : `https://openalex.org/${a.openalex}`,
+        },
+        src,
+      );
+      if (!person) continue;
+      await linkEntities(person, "auteur_de", pub, src);
+      for (const i of a.institutions.slice(0, 3)) {
+        if (!orgIds.has(i.openalex)) {
+          orgIds.set(
+            i.openalex,
+            await upsertEntity({ type: "organisation", name: i.name, fields: { pays: i.country, ror: i.ror, openalex: i.openalex }, url: `https://openalex.org/${i.openalex}` }, src),
+          );
+        }
+        const org = orgIds.get(i.openalex);
+        if (org) await linkEntities(person, "membre_de", org, src);
+      }
+    }
+  }
 }

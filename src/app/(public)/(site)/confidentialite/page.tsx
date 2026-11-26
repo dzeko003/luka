@@ -122,6 +122,10 @@ export default function Page() {
                   <strong>Moteur de recherche web</strong> : reçoit les requêtes de recherche générées à partir de ta demande.
                 </li>
                 <li>
+                  <strong>OpenAlex</strong>, la base ouverte des publications scientifiques : reçoit les disciplines, mots-clés, pays et
+                  dates tirés d&apos;une demande de publications.
+                </li>
+                <li>
                   <strong>Fournisseur de modèle d&apos;IA</strong> : reçoit ta demande et le texte des pages lues, afin
                   d&apos;en extraire les données.
                 </li>

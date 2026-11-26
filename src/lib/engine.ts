@@ -3,6 +3,7 @@ import { db, schema } from "@/db";
 import type { ColumnDef, LogEntry } from "@/db/schema";
 import { apify, tavilyKey, tierLimits } from "./config";
 import { apifyAvailable, facebookPages, instagramProfiles, instagramUsername, searchGoogleMaps } from "./connectors/apify";
+import { OPENALEX_ATTRIBUTION, resolveSubfields, SCHOLAR_FIELDS, type ScholarField, searchWorks, type Work } from "./connectors/openalex";
 import { OSM_ATTRIBUTION, searchOsmPlaces, type OsmFilter } from "./connectors/osm";
 import { PLACE_FIELDS, placeFieldOf, type Place, type PlaceField } from "./connectors/places";
 import { reverseGeocode } from "./connectors/reverse";
@@ -12,7 +13,7 @@ import type { SourceDocument } from "./connectors/types";
 import { chatJson } from "./llm";
 import { collecteMail, sendMail } from "./mailer";
 import { notify } from "./notifications";
-import { cityOfZone, entityToPlace, findInCity } from "./kb";
+import { cityOfZone, entityToPlace, findInCity, ingestWorks } from "./kb";
 import { mergeRefresh, refreshDone, refreshReset } from "./refresh";
 import { reportError } from "./monitoring";
 import { loadSettings } from "./settings";
@@ -324,6 +325,124 @@ export async function enrichFromSocial(c: CollecteRecord, plan: PlacesPlan, rows
       await addLog(c.id, `Facebook ignoré : ${(e as Error).message}`, "warn");
     }
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Publications scientifiques : OpenAlex                               */
+/* ------------------------------------------------------------------ */
+
+export type ScholarPlan = {
+  disciplines: string[];
+  keywords: string[];
+  countries: string[];
+  from: string | null;
+  to: string | null;
+  sort: "recent" | "cite";
+  mapping: Record<string, ScholarField>;
+};
+
+/** L'IA décide si la demande porte sur des publications scientifiques et la traduit pour OpenAlex. */
+async function planScholarly(c: CollecteRecord): Promise<ScholarPlan | null> {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data } = await chatJson<{
+    publications?: boolean;
+    disciplines?: unknown[];
+    mots_cles?: unknown[];
+    pays?: unknown[];
+    depuis?: unknown;
+    jusqua?: unknown;
+    tri?: unknown;
+    colonnes?: Record<string, unknown>;
+  }>(
+    [
+      {
+        role: "system",
+        content:
+          "Tu prépares une recherche dans OpenAlex, la base mondiale des publications scientifiques. Réponds uniquement en JSON :\n" +
+          '{"publications": true|false, "disciplines": ["geography"], "mots_cles": ["urban erosion", "érosion urbaine"], "pays": ["CG"], "depuis": "AAAA-MM-JJ"|null, ' +
+          '"jusqua": "AAAA-MM-JJ"|null, "tri": "recent"|"cite", "colonnes": {"<nom_colonne>": "<champ>"}}\n' +
+          "- publications = true seulement si la demande porte sur des travaux de recherche (articles, thèses, publications, " +
+          "travaux scientifiques, chercheurs et leurs publications).\n" +
+          "- disciplines : les disciplines scientifiques demandées, en anglais, une ou deux par discipline au plus " +
+          "(ex. « geography », « urban studies », « hydrology », « public health »). Vide si la demande n'en cite pas.\n" +
+          "- mots_cles : seulement si la demande précise un sujet plus étroit que la discipline (ex. érosion, inondations, " +
+          "transport) : 2 à 6 termes courts, en anglais ET en français, cherchés dans le titre et le résumé. " +
+          "Ne répète pas le nom de la discipline. Vide sinon.\n" +
+          "- pays : codes ISO à deux lettres du pays des institutions des auteurs (République du Congo = CG, " +
+          "République démocratique du Congo = CD). Si « congolais » n'est pas précisé, mets les deux. Vide si aucun pays.\n" +
+          `- depuis / jusqua : période demandée (aujourd'hui : ${today}). Pour « les dernières » sans période, mets depuis = il y a 3 ans.\n` +
+          "- tri : « cite » si la demande veut les plus citées ou les plus importantes, sinon « recent ».\n" +
+          `- colonnes : pour chaque colonne qu'une publication peut remplir, le champ parmi : ${SCHOLAR_FIELDS.join(", ")}. ` +
+          "« auteurs » est la liste des auteurs, « institutions » leurs universités ou centres, « pays » les pays de ces institutions, " +
+          "« revue » la revue ou l'éditeur, « discipline » le sous-domaine, « domaine » le grand domaine, « acces_libre » oui ou non, " +
+          "« resume » le résumé. N'inclus pas les colonnes qu'aucun de ces champs ne couvre.",
+      },
+      { role: "user", content: `Demande : ${c.request}\n\nColonnes :\n${describeColumns(c.columns)}` },
+    ],
+    { userId: c.userId, collecteId: c.id, purpose: "plan" },
+    { maxTokens: 1200 },
+  );
+  if (!data.publications) return null;
+  const strings = (v: unknown[] | undefined) => (v ?? []).filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim());
+  const date = (v: unknown) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+  const mapping: Record<string, ScholarField> = {};
+  for (const col of c.columns) {
+    const field = data.colonnes?.[col.name];
+    if (typeof field === "string" && (SCHOLAR_FIELDS as readonly string[]).includes(field)) mapping[col.name] = field as ScholarField;
+  }
+  // La première colonne identifie la ligne : sans elle, les publications seraient inutilisables
+  if (!mapping[c.columns[0].name]) mapping[c.columns[0].name] = "titre";
+  const plan: ScholarPlan = {
+    disciplines: strings(data.disciplines).slice(0, 4),
+    keywords: strings(data.mots_cles).slice(0, 8),
+    countries: strings(data.pays).map((p) => p.toUpperCase()).filter((p) => /^[A-Z]{2}$/.test(p)),
+    from: date(data.depuis),
+    to: date(data.jusqua),
+    sort: data.tri === "cite" ? "cite" : "recent",
+    mapping,
+  };
+  // Sans sujet ni pays, la recherche renverrait n'importe quelle publication
+  return plan.disciplines.length || plan.keywords.length || plan.countries.length ? plan : null;
+}
+
+function workToRow(c: CollecteRecord, plan: ScholarPlan, w: Work): ExtractedRow {
+  const data: Record<string, Value> = {};
+  for (const col of c.columns) {
+    const field = plan.mapping[col.name];
+    data[col.name] = field ? normalizeValue(w.fields[field], col.type) : null;
+  }
+  return { data, sourceUrl: w.url, sourceTitle: OPENALEX_ATTRIBUTION, confidence: 0.9 };
+}
+
+/** Publications trouvées sur OpenAlex ; elles alimentent aussi la base commune (publications, auteurs, institutions). */
+async function collectWorks(c: CollecteRecord, plan: ScholarPlan, found: RowSet) {
+  let subfields: { id: string; name: string }[] = [];
+  try {
+    subfields = await resolveSubfields(plan.disciplines);
+  } catch (e) {
+    await addLog(c.id, `Disciplines non reconnues : ${(e as Error).message}`, "warn");
+  }
+  // Discipline introuvable dans la classification : elle est cherchée comme un mot-clé
+  const keywords = subfields.length < plan.disciplines.length && !plan.keywords.length ? plan.disciplines : plan.keywords;
+  const what = [
+    subfields.length ? `discipline : ${subfields.map((s) => s.name).join(", ")}` : null,
+    keywords.length ? `« ${keywords.join(" », « ")} »` : null,
+    plan.countries.length ? `institutions : ${plan.countries.join(", ")}` : null,
+    plan.from || plan.to ? `${plan.from ?? "…"} → ${plan.to ?? "aujourd'hui"}` : null,
+  ].filter(Boolean);
+  await addLog(c.id, `OpenAlex : publications ${what.join(" · ")}${plan.sort === "cite" ? ", les plus citées d'abord" : ", les plus récentes d'abord"}…`);
+  try {
+    const { works, total } = await searchWorks(
+      { subfields: subfields.map((s) => s.id), keywords, countries: plan.countries, from: plan.from, to: plan.to, sort: plan.sort, max: c.maxRows - found.size },
+      (m) => addLog(c.id, m),
+    );
+    found.add(works.map((w) => workToRow(c, plan, w)));
+    await addLog(c.id, `OpenAlex : ${works.length} publication(s) gardée(s) sur ${total} trouvée(s).`);
+    void ingestWorks(works).catch((e) => console.error(`[base] publications non versées : ${(e as Error).message}`));
+  } catch (e) {
+    await addLog(c.id, `OpenAlex ignoré : ${(e as Error).message}`, "warn");
+  }
+  await setProgress(c.id, 45);
 }
 
 /* ------------------------------------------------------------------ */
@@ -751,6 +870,15 @@ export async function runCollecte(collecteId: string) {
       await db.update(schema.collectes).set({ zone: plan.zones[0] }).where(eq(schema.collectes.id, c.id));
       await fromKnowledgeBase(c, plan, found);
       await collectPlaces(c, plan, found, budget);
+    } else {
+      // Pas des lieux : peut-être des publications scientifiques
+      let scholar: ScholarPlan | null = null;
+      try {
+        scholar = await planScholarly(c);
+      } catch (e) {
+        await addLog(c.id, `Analyse des publications ignorée : ${(e as Error).message}`, "warn");
+      }
+      if (scholar) await collectWorks(c, scholar, found);
     }
     const fromPlaces = found.size;
 
@@ -758,8 +886,8 @@ export async function runCollecte(collecteId: string) {
     if (found.size >= c.maxRows) {
       await addLog(c.id, `${found.size} ligne(s) déjà trouvée(s) : recherche web non nécessaire.`);
     } else if (fromPlaces >= Math.min(100, c.maxRows * 0.3)) {
-      // Les cartes ont déjà donné l'essentiel : la recherche web ajouterait peu de lignes pour beaucoup de temps
-      await addLog(c.id, `${fromPlaces} lieu(x) trouvé(s) sur les cartes : recherche web non nécessaire.`);
+      // Les cartes (ou OpenAlex) ont déjà donné l'essentiel : la recherche web ajouterait peu de lignes pour beaucoup de temps
+      await addLog(c.id, `${fromPlaces} ${plan ? "lieu(x) trouvé(s) sur les cartes" : "publication(s) trouvée(s) sur OpenAlex"} : recherche web non nécessaire.`);
     } else if (tavilyKey) {
       await addLog(c.id, "Préparation des recherches web…");
       const queries = await planQueries(c, cfg.maxQueries);
