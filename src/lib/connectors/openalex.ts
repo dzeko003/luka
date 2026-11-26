@@ -41,7 +41,7 @@ export type Work = {
 };
 
 export type WorkQuery = {
-  /** Sous-domaines OpenAlex (identifiants numériques, voir resolveSubfields) : sujet principal de la publication. */
+  /** Sous-domaines OpenAlex (identifiants numériques, voir resolveDisciplines) : sujet principal de la publication. */
   subfields: string[];
   /** Termes cherchés dans le titre et le résumé (l'un ou l'autre), en anglais et dans la langue locale. */
   keywords: string[];
@@ -167,26 +167,52 @@ async function get<T>(path: string, params: URLSearchParams): Promise<T> {
 
 type WorksPage = { results: OaWork[]; meta: { count: number; next_cursor: string | null } };
 
-const subfieldCache = new Map<string, { id: string; name: string } | null>();
+const plier = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 
-/** Disciplines en anglais (« geography ») → sous-domaines de la classification OpenAlex (« 3305 Geography, Planning and Development »). */
-export async function resolveSubfields(names: string[]): Promise<{ id: string; name: string }[]> {
-  const out = new Map<string, string>();
-  for (const raw of names.slice(0, 6)) {
-    const name = raw.trim().toLowerCase();
-    if (!name) continue;
-    if (!subfieldCache.has(name)) {
-      const page = await get<{ results: { id: string; display_name: string }[] }>(
-        "subfields",
-        new URLSearchParams({ search: clean(name), per_page: "1", select: "id,display_name" }),
-      );
-      const r = page.results[0];
-      subfieldCache.set(name, r ? { id: r.id.split("/").pop()!, name: r.display_name } : null);
-    }
-    const hit = subfieldCache.get(name);
-    if (hit) out.set(hit.id, hit.name);
+export type Discipline = { name: string; subfields: string[] };
+const disciplineCache = new Map<string, Discipline | null>();
+
+/**
+ * Une discipline en anglais → sous-domaines de la classification OpenAlex.
+ * Un grand domaine (« computer science », « medicine ») donne tous ses sous-domaines ; sinon, le sous-domaine
+ * le plus proche (« geography » → Geography, Planning and Development).
+ */
+async function resolveDiscipline(raw: string): Promise<Discipline | null> {
+  const name = plier(raw);
+  if (!name) return null;
+  if (disciplineCache.has(name)) return disciplineCache.get(name)!;
+  const select = "id,display_name";
+  let found: Discipline | null = null;
+  const fields = await get<{ results: { id: string; display_name: string }[] }>("fields", new URLSearchParams({ search: clean(name), per_page: "1", select }));
+  const field = fields.results[0];
+  // Le domaine n'est retenu que s'il correspond vraiment au nom demandé, pas seulement par un mot voisin
+  if (field && (plier(field.display_name) === name || ` ${plier(field.display_name)} `.includes(` ${name} `))) {
+    const id = field.id.split("/").pop()!;
+    const subs = await get<{ results: { id: string }[] }>("subfields", new URLSearchParams({ filter: `field.id:${id}`, per_page: "100", select: "id" }));
+    if (subs.results.length) found = { name: field.display_name, subfields: subs.results.map((r) => r.id.split("/").pop()!) };
   }
-  return [...out].map(([id, name]) => ({ id, name }));
+  if (!found) {
+    const subs = await get<{ results: { id: string; display_name: string }[] }>("subfields", new URLSearchParams({ search: clean(name), per_page: "1", select }));
+    const r = subs.results[0];
+    if (r) found = { name: r.display_name, subfields: [r.id.split("/").pop()!] };
+  }
+  disciplineCache.set(name, found);
+  return found;
+}
+
+/** Disciplines demandées → disciplines reconnues dans la classification OpenAlex (les autres sont ignorées). */
+export async function resolveDisciplines(names: string[]): Promise<Discipline[]> {
+  const out: Discipline[] = [];
+  for (const n of names.slice(0, 6)) {
+    const d = await resolveDiscipline(n);
+    if (d && !out.some((o) => o.name === d.name)) out.push(d);
+  }
+  return out;
 }
 
 /** Publications correspondant à la recherche, des plus récentes (ou des plus citées) aux plus anciennes. */
@@ -194,7 +220,7 @@ export async function searchWorks(q: WorkQuery, onLog?: (m: string) => Promise<u
   const filters: string[] = [];
   const countries = q.countries.map((c) => c.trim().toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c));
   if (countries.length) filters.push(`authorships.institutions.country_code:${countries.join("|")}`);
-  const subfields = q.subfields.filter((s) => /^\d+$/.test(s));
+  const subfields = [...new Set(q.subfields.filter((s) => /^\d+$/.test(s)))].slice(0, 100);
   if (subfields.length) filters.push(`primary_topic.subfield.id:${subfields.join("|")}`);
   const keywords = q.keywords.map(clean).filter((k) => k.length > 1).slice(0, 12);
   if (keywords.length) filters.push(`title_and_abstract.search:${keywords.join("|")}`);
