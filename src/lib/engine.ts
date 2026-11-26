@@ -3,7 +3,7 @@ import { db, schema } from "@/db";
 import type { ColumnDef, LogEntry } from "@/db/schema";
 import { apify, tavilyKey, tierLimits } from "./config";
 import { apifyAvailable, facebookPages, instagramProfiles, instagramUsername, searchGoogleMaps } from "./connectors/apify";
-import { OPENALEX_ATTRIBUTION, resolveSubfields, SCHOLAR_FIELDS, type ScholarField, searchWorks, type Work } from "./connectors/openalex";
+import { OPENALEX_ATTRIBUTION, resolveDisciplines, SCHOLAR_FIELDS, type ScholarField, searchWorks, type Work } from "./connectors/openalex";
 import { OSM_ATTRIBUTION, searchOsmPlaces, type OsmFilter } from "./connectors/osm";
 import { PLACE_FIELDS, placeFieldOf, type Place, type PlaceField } from "./connectors/places";
 import { reverseGeocode } from "./connectors/reverse";
@@ -363,8 +363,9 @@ async function planScholarly(c: CollecteRecord): Promise<ScholarPlan | null> {
           '"jusqua": "AAAA-MM-JJ"|null, "tri": "recent"|"cite", "colonnes": {"<nom_colonne>": "<champ>"}}\n' +
           "- publications = true seulement si la demande porte sur des travaux de recherche (articles, thèses, publications, " +
           "travaux scientifiques, chercheurs et leurs publications).\n" +
-          "- disciplines : les disciplines scientifiques demandées, en anglais, une ou deux par discipline au plus " +
-          "(ex. « geography », « urban studies », « hydrology », « public health »). Vide si la demande n'en cite pas.\n" +
+          "- disciplines : les disciplines demandées, en anglais, telles que la demande les formule, sans les restreindre : " +
+          "« informatique » → « computer science » (pas une spécialité de l'informatique), « médecine » → « medicine », " +
+          "« géographie » → « geography », « santé publique » → « public health ». Vide si la demande n'en cite pas.\n" +
           "- mots_cles : seulement si la demande précise un sujet plus étroit que la discipline (ex. érosion, inondations, " +
           "transport) : 2 à 6 termes courts, en anglais ET en français, cherchés dans le titre et le résumé. " +
           "Ne répète pas le nom de la discipline. Vide sinon.\n" +
@@ -416,16 +417,16 @@ function workToRow(c: CollecteRecord, plan: ScholarPlan, w: Work): ExtractedRow 
 
 /** Publications trouvées sur OpenAlex ; elles alimentent aussi la base commune (publications, auteurs, institutions). */
 async function collectWorks(c: CollecteRecord, plan: ScholarPlan, found: RowSet) {
-  let subfields: { id: string; name: string }[] = [];
+  let disciplines: { name: string; subfields: string[] }[] = [];
   try {
-    subfields = await resolveSubfields(plan.disciplines);
+    disciplines = await resolveDisciplines(plan.disciplines);
   } catch (e) {
     await addLog(c.id, `Disciplines non reconnues : ${(e as Error).message}`, "warn");
   }
   // Discipline introuvable dans la classification : elle est cherchée comme un mot-clé
-  const keywords = subfields.length < plan.disciplines.length && !plan.keywords.length ? plan.disciplines : plan.keywords;
+  const keywords = disciplines.length < plan.disciplines.length && !plan.keywords.length ? plan.disciplines : plan.keywords;
   const what = [
-    subfields.length ? `discipline : ${subfields.map((s) => s.name).join(", ")}` : null,
+    disciplines.length ? `discipline : ${disciplines.map((d) => d.name).join(", ")}` : null,
     keywords.length ? `« ${keywords.join(" », « ")} »` : null,
     plan.countries.length ? `institutions : ${plan.countries.join(", ")}` : null,
     plan.from || plan.to ? `${plan.from ?? "…"} → ${plan.to ?? "aujourd'hui"}` : null,
@@ -433,7 +434,7 @@ async function collectWorks(c: CollecteRecord, plan: ScholarPlan, found: RowSet)
   await addLog(c.id, `OpenAlex : publications ${what.join(" · ")}${plan.sort === "cite" ? ", les plus citées d'abord" : ", les plus récentes d'abord"}…`);
   try {
     const { works, total } = await searchWorks(
-      { subfields: subfields.map((s) => s.id), keywords, countries: plan.countries, from: plan.from, to: plan.to, sort: plan.sort, max: c.maxRows - found.size },
+      { subfields: disciplines.flatMap((d) => d.subfields), keywords, countries: plan.countries, from: plan.from, to: plan.to, sort: plan.sort, max: c.maxRows - found.size },
       (m) => addLog(c.id, m),
     );
     found.add(works.map((w) => workToRow(c, plan, w)));
