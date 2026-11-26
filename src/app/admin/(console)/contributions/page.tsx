@@ -1,4 +1,4 @@
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Metadata } from "next";
 import { ContributionReview } from "@/components/admin/contribution-review";
 import { PageTitle } from "@/components/admin/ui";
@@ -29,7 +29,7 @@ export default async function Page() {
         // Chaque ligne est cherchée avec sa propre ville (ou celle de la contribution si elle n'en a pas)
         const keys = preview.filter((r) => r.nom && (r.ville || x.city)).map((r) => kbKey(r.nom, r.ville || x.city));
         known = keys.length
-          ? (await db.select({ key: schema.kbEntities.key }).from(schema.kbEntities).where(inArray(schema.kbEntities.key, keys))).length
+          ? (await db.select({ key: schema.entities.key }).from(schema.entities).where(and(eq(schema.entities.type, "lieu"), inArray(schema.entities.key, keys)))).length
           : 0;
       }
       return {

@@ -2,16 +2,35 @@ import { and, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import type { ColumnDef, KbValue } from "@/db/schema";
 import { placeFieldOf, type Place, type PlaceField } from "./connectors/places";
-import { cityOfZone, fold, guessField, isExtraKey, isKbField, type KbField, kbKey, norm, PERSONAL } from "./kb-fields";
+import {
+  acceptsField,
+  cityOfZone,
+  type EntityType,
+  entityKey,
+  fold,
+  guessField,
+  isExtraKey,
+  isKbField,
+  type KbField,
+  kbKey,
+  norm,
+  PERSONAL,
+  type Relation,
+} from "./kb-fields";
 
-export { cityOfZone, guessField, KB_FIELDS, KB_LABELS, type KbField, kbKey, MAX_CONTRIBUTION_ROWS } from "./kb-fields";
+export { cityOfZone, ENTITY_TYPES, type EntityType, guessField, KB_FIELDS, KB_LABELS, type KbField, kbKey, MAX_CONTRIBUTION_ROWS } from "./kb-fields";
+
+const e = schema.entities;
+const isPlace = eq(e.type, "lieu");
 
 /*
- * Base Luka : annuaire des établissements, alimenté par les lignes validées des collectes (si l'utilisateur
- * accepte de les partager) et par les contributions approuvées par l'administrateur. Les collectes suivantes
- * la consultent avant de chercher ailleurs.
+ * Base Luka : fiches communes de lieux, d'organisations, de personnes et de publications, reliées entre elles.
+ * Les lieux viennent des lignes validées des collectes (si l'utilisateur accepte de les partager) et des
+ * contributions approuvées par l'administrateur ; les collectes suivantes les consultent avant de chercher ailleurs.
  *
- * Seules des informations publiques d'établissements y entrent : jamais de données sur des personnes.
+ * Seules des informations publiques y entrent. Une personne n'y figure que sous son identité professionnelle
+ * publique (nom de signature, ORCID, discipline, affiliation) : jamais de téléphone, d'e-mail, d'adresse ni de
+ * photo, et sa fiche est retirée sur simple demande.
  */
 
 /** Champ de la base pour une colonne de collecte : celui choisi à la création, sinon deviné d'après le libellé. */
@@ -41,8 +60,20 @@ const STALE_MS = 180 * 86_400_000;
 
 export type KbRecord = { fields: Partial<Record<string, string | number>>; city: string; category?: string | null; url?: string | null };
 
+/** Fusionne des valeurs reçues dans une fiche : confirme une valeur retrouvée, remplace une valeur peu sûre ou ancienne. */
+function mergeFields(old: Record<string, KbValue>, incoming: Record<string, KbValue>, now: string) {
+  const fields = { ...old };
+  for (const [f, val] of Object.entries(incoming)) {
+    const cur = fields[f];
+    if (!cur) fields[f] = val;
+    else if (sameValue(cur.v, val.v)) fields[f] = { ...cur, n: cur.n + 1, at: now };
+    else if (cur.n <= 1 || Date.now() - Date.parse(cur.at) > STALE_MS) fields[f] = val;
+  }
+  return fields;
+}
+
 /**
- * Ajoute ou complète des établissements. Une valeur retrouvée est confirmée une fois de plus ; une valeur
+ * Ajoute ou complète des lieux. Une valeur retrouvée est confirmée une fois de plus ; une valeur
  * différente remplace l'ancienne seulement si celle-ci n'a été vue qu'une fois ou est ancienne.
  */
 export async function upsertEntities(records: KbRecord[], src: string): Promise<{ added: number; updated: number }> {
@@ -56,7 +87,7 @@ export async function upsertEntities(records: KbRecord[], src: string): Promise<
   for (let i = 0; i < valid.length; i += 200) {
     const batch = valid.slice(i, i + 200);
     const keys = [...new Set(batch.map((r) => kbKey(r.name, r.city)))];
-    const existing = await db.select().from(schema.kbEntities).where(inArray(schema.kbEntities.key, keys));
+    const existing = await db.select().from(e).where(and(isPlace, inArray(e.key, keys)));
     const byKey = new Map(existing.map((e) => [e.key, e]));
 
     for (const r of batch) {
@@ -69,8 +100,8 @@ export async function upsertEntities(records: KbRecord[], src: string): Promise<
       const old = byKey.get(key);
       if (!old) {
         const [created] = await db
-          .insert(schema.kbEntities)
-          .values({ key, name: r.name, city: r.city, category: r.category ?? (incoming.categorie?.v as string | undefined) ?? null, fields: incoming })
+          .insert(schema.entities)
+          .values({ type: "lieu", key, name: r.name, city: r.city, category: r.category ?? (incoming.categorie?.v as string | undefined) ?? null, fields: incoming })
           .onConflictDoNothing()
           .returning();
         if (created) {
@@ -79,17 +110,11 @@ export async function upsertEntities(records: KbRecord[], src: string): Promise<
         }
         continue;
       }
-      const fields = { ...old.fields };
-      for (const [f, val] of Object.entries(incoming)) {
-        const cur = fields[f];
-        if (!cur) fields[f] = val;
-        else if (sameValue(cur.v, val.v)) fields[f] = { ...cur, n: cur.n + 1, at: now };
-        else if (cur.n <= 1 || Date.now() - Date.parse(cur.at) > STALE_MS) fields[f] = val;
-      }
+      const fields = mergeFields(old.fields, incoming, now);
       const [saved] = await db
-        .update(schema.kbEntities)
+        .update(schema.entities)
         .set({ fields, confirmations: old.confirmations + 1, category: old.category ?? r.category ?? null, updatedAt: new Date() })
-        .where(eq(schema.kbEntities.id, old.id))
+        .where(eq(schema.entities.id, old.id))
         .returning();
       byKey.set(key, saved);
       updated++;
@@ -142,12 +167,12 @@ export function ingestLater(collecteId: string, rowIds?: string[]) {
 }
 
 /** Une fiche de la base, au format des sources de lieux. Confiance : 0,8, plus 0,05 par confirmation (0,95 au plus). */
-export function entityToPlace(e: typeof schema.kbEntities.$inferSelect): { place: Place; confidence: number } {
-  const fields: Place["fields"] = { nom: e.name, ville: e.city };
-  for (const [f, val] of Object.entries(e.fields)) fields[f as PlaceField] = val.v;
-  if (e.category && !fields.categorie) fields.categorie = e.category;
-  const url = Object.values(e.fields).find((v) => v.url)?.url ?? "";
-  return { place: { fields, url }, confidence: Math.min(0.95, 0.8 + 0.05 * (e.confirmations - 1)) };
+export function entityToPlace(x: typeof schema.entities.$inferSelect): { place: Place; confidence: number } {
+  const fields: Place["fields"] = { nom: x.name, ville: x.city ?? "" };
+  for (const [f, val] of Object.entries(x.fields)) fields[f as PlaceField] = val.v;
+  if (x.category && !fields.categorie) fields.categorie = x.category;
+  const url = Object.values(x.fields).find((v) => v.url)?.url ?? "";
+  return { place: { fields, url }, confidence: Math.min(0.95, 0.8 + 0.05 * (x.confirmations - 1)) };
 }
 
 /** Établissements connus d'une ville qui correspondent aux termes de la recherche (catégorie ou nom). */
@@ -156,37 +181,98 @@ export async function findInCity(city: string, terms: string[], limit: number) {
   if (!city || !words.length || limit <= 0) return [];
   // Racine des mots (« pharmacies » → « pharmaci ») pour attraper singulier et pluriel
   const likes = words.map((w) => `%${w.replace(/(es|s|x)$/, "")}%`);
-  const unaccent = (col: typeof schema.kbEntities.category | typeof schema.kbEntities.name) =>
+  const unaccent = (col: typeof schema.entities.category | typeof schema.entities.name) =>
     sql`translate(lower(coalesce(${col}, '')), 'àâäéèêëîïôöùûüç', 'aaaeeeeiioouuuc')`;
   return db
     .select()
-    .from(schema.kbEntities)
+    .from(e)
     .where(
       and(
-        sql`translate(lower(${schema.kbEntities.city}), 'àâäéèêëîïôöùûüç', 'aaaeeeeiioouuuc') = ${norm(city)}`,
-        or(...likes.flatMap((l) => [sql`${unaccent(schema.kbEntities.category)} like ${l}`, sql`${unaccent(schema.kbEntities.name)} like ${l}`])),
+        isPlace,
+        sql`translate(lower(${schema.entities.city}), 'àâäéèêëîïôöùûüç', 'aaaeeeeiioouuuc') = ${norm(city)}`,
+        or(...likes.flatMap((l) => [sql`${unaccent(schema.entities.category)} like ${l}`, sql`${unaccent(schema.entities.name)} like ${l}`])),
       ),
     )
-    .orderBy(sql`${schema.kbEntities.confirmations} desc`)
+    .orderBy(sql`${schema.entities.confirmations} desc`)
     .limit(limit);
 }
 
 /** Établissements connus, retrouvés par leur nom exact dans une ville (enrichissement d'un fichier). */
 export async function findByNames(city: string, names: string[]) {
   const keys = [...new Set(names.map((n) => kbKey(n, city)))];
-  const found = new Map<string, typeof schema.kbEntities.$inferSelect>();
+  const found = new Map<string, typeof schema.entities.$inferSelect>();
   for (let i = 0; i < keys.length; i += 500) {
-    for (const e of await db.select().from(schema.kbEntities).where(inArray(schema.kbEntities.key, keys.slice(i, i + 500)))) found.set(e.key, e);
+    for (const x of await db.select().from(e).where(and(isPlace, inArray(e.key, keys.slice(i, i + 500))))) found.set(x.key, x);
   }
   return found;
 }
 
-export async function kbSearch(q: string, limit = 50) {
+/** Recherche dans toute la base (console d'administration), avec le nombre de liens de chaque fiche. */
+export async function kbSearch(q: string, limit = 50, type?: EntityType) {
   const like = `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
   return db
-    .select()
-    .from(schema.kbEntities)
-    .where(q ? or(ilike(schema.kbEntities.name, like), ilike(schema.kbEntities.city, like), ilike(schema.kbEntities.category, like)) : undefined)
-    .orderBy(sql`${schema.kbEntities.updatedAt} desc`)
+    .select({
+      entity: e,
+      // Nom de table écrit en toutes lettres : dans une sous-requête, Drizzle omettrait le préfixe de la colonne id
+      links: sql<number>`(select count(*) from entity_links l where l.from_id = kb_entities.id or l.to_id = kb_entities.id)`.mapWith(Number),
+    })
+    .from(e)
+    .where(and(type ? eq(e.type, type) : undefined, q ? or(ilike(e.name, like), ilike(e.city, like), ilike(e.category, like)) : undefined))
+    .orderBy(sql`${e.updatedAt} desc`)
     .limit(limit);
+}
+
+export type EntityInput = {
+  type: EntityType;
+  name: string;
+  city?: string | null;
+  category?: string | null;
+  fields: Record<string, string | number | null | undefined>;
+  url?: string | null;
+};
+
+/**
+ * Ajoute ou complète une fiche de n'importe quel type et renvoie son identifiant (null si elle est invalide).
+ * Les champs hors de la liste de son type sont ignorés : une personne ne reçoit jamais de coordonnées.
+ */
+export async function upsertEntity(input: EntityInput, src: string): Promise<string | null> {
+  const name = input.name.trim().replace(/\s+/g, " ").slice(0, 300);
+  const city = input.city?.trim() ? cityName(input.city) : null;
+  if (name.length < 2 || (input.type === "lieu" && !city)) return null;
+  const now = new Date().toISOString();
+  const incoming: Record<string, KbValue> = {};
+  for (const [f, v] of Object.entries(input.fields)) {
+    if (!acceptsField(input.type, f) || v === undefined || v === null || String(v).trim() === "") continue;
+    incoming[f] = { v: typeof v === "number" ? v : String(v).trim().slice(0, 2000), n: 1, at: now, src, url: input.url ?? null };
+  }
+  const key = entityKey(input.type, name, { city, fields: input.fields });
+  const [old] = await db.select().from(e).where(and(eq(e.type, input.type), eq(e.key, key)));
+  if (!old) {
+    const [created] = await db
+      .insert(e)
+      .values({ type: input.type, key, name, city, category: input.category ?? null, fields: incoming })
+      .onConflictDoNothing()
+      .returning({ id: e.id });
+    if (created) return created.id;
+    // Créée entre-temps par une autre exécution : on la complète
+    return upsertEntity(input, src);
+  }
+  await db
+    .update(e)
+    .set({ fields: mergeFields(old.fields, incoming, now), confirmations: old.confirmations + 1, category: old.category ?? input.category ?? null, city: old.city ?? city, updatedAt: new Date() })
+    .where(eq(e.id, old.id));
+  return old.id;
+}
+
+/** Relie deux fiches (une personne auteur d'une publication…) ; un lien déjà connu est confirmé une fois de plus. */
+export async function linkEntities(fromId: string, relation: Relation, toId: string, src: string) {
+  if (fromId === toId) return;
+  const l = schema.entityLinks;
+  await db
+    .insert(l)
+    .values({ fromId, relation, toId, src })
+    .onConflictDoUpdate({
+      target: [l.fromId, l.relation, l.toId],
+      set: { confirmations: sql`${l.confirmations} + 1`, updatedAt: new Date() },
+    });
 }

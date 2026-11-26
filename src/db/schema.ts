@@ -7,8 +7,10 @@ import {
   real,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { EntityType, Relation } from "@/lib/kb-fields";
 
 /* ------------------------------------------------------------------ */
 /* Authentification (tables attendues par Better Auth)                 */
@@ -259,26 +261,53 @@ export const payments = pgTable(
 );
 
 /* ------------------------------------------------------------------ */
-/* Base Luka : établissements connus, réutilisés par les collectes     */
+/* Base Luka : lieux, organisations, personnes et publications connus  */
 /* ------------------------------------------------------------------ */
 
-/** Une information d'un établissement : valeur, nombre de confirmations, dernière fois vue, origine. */
+/** Une information d'une fiche : valeur, nombre de confirmations, dernière fois vue, origine. */
 export type KbValue = { v: string | number; n: number; at: string; src: string; url?: string | null };
 
-export const kbEntities = pgTable(
+/**
+ * Une fiche de la base commune. Le type dit ce qu'elle décrit (lieu, organisation, personne, publication) ;
+ * les colonnes communes servent à chercher, `fields` garde tout le reste avec sa provenance.
+ * La table garde son nom d'origine (kb_entities) : un ancien travailleur encore en service la retrouve.
+ */
+export const entities = pgTable(
   "kb_entities",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    key: text("key").notNull().unique(), // nom|ville normalisés
-    name: text("name").notNull(),
-    city: text("city").notNull(),
-    category: text("category"),
+    type: text("type").$type<EntityType>().notNull().default("lieu"),
+    // Unique pour un type : nom|ville pour un lieu, doi:… pour une publication, orcid:… pour une personne…
+    key: text("key").notNull(),
+    name: text("name").notNull(), // nom du lieu, de l'organisation ou de la personne ; titre d'une publication
+    city: text("city"), // obligatoire pour un lieu, facultative ailleurs
+    category: text("category"), // catégorie d'un lieu, discipline d'une publication…
     fields: jsonb("fields").$type<Record<string, KbValue>>().notNull().default({}),
     confirmations: integer("confirmations").notNull().default(1), // nombre de collectes ou contributions qui l'ont confirmé
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (t) => [index("kb_city_idx").on(t.city)],
+  (t) => [uniqueIndex("kb_type_key_idx").on(t.type, t.key), index("kb_type_city_idx").on(t.type, t.city)],
+);
+
+/** Liens entre fiches : une personne est l'auteur d'une publication, membre d'une organisation… */
+export const entityLinks = pgTable(
+  "entity_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fromId: uuid("from_id")
+      .notNull()
+      .references(() => entities.id, { onDelete: "cascade" }),
+    relation: text("relation").$type<Relation>().notNull(),
+    toId: uuid("to_id")
+      .notNull()
+      .references(() => entities.id, { onDelete: "cascade" }),
+    src: text("src").notNull(),
+    confirmations: integer("confirmations").notNull().default(1),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("entity_links_unique_idx").on(t.fromId, t.relation, t.toId), index("entity_links_to_idx").on(t.toId)],
 );
 
 /** Fichiers envoyés par les utilisateurs pour enrichir la base, en attente de modération. */
