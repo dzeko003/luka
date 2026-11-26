@@ -53,7 +53,8 @@ export type WorkQuery = {
   max: number;
 };
 
-type OaInstitution = { id: string; display_name: string; ror?: string | null; country_code?: string | null };
+// OpenAlex renvoie parfois un auteur ou une institution sans identifiant ni nom : tout est donc facultatif
+type OaInstitution = { id: string | null; display_name: string | null; ror?: string | null; country_code?: string | null };
 type OaWork = {
   id: string;
   doi: string | null;
@@ -67,7 +68,7 @@ type OaWork = {
   primary_location: { landing_page_url?: string | null; pdf_url?: string | null; source?: { display_name?: string | null } | null } | null;
   open_access: { is_oa?: boolean; oa_url?: string | null } | null;
   primary_topic: { subfield?: { display_name?: string }; field?: { display_name?: string } } | null;
-  authorships: { author: { id: string; display_name: string; orcid: string | null }; institutions: OaInstitution[] }[];
+  authorships: { author: { id: string | null; display_name: string | null; orcid?: string | null } | null; institutions?: OaInstitution[] | null }[] | null;
 };
 
 const SELECT =
@@ -87,7 +88,7 @@ const TYPES: Record<string, string> = {
   letter: "lettre",
 };
 
-const shortId = (url: string) => url.replace(/^https:\/\/openalex\.org\//, "");
+const shortId = (url: string | null | undefined) => (url ?? "").replace(/^https:\/\/openalex\.org\//, "");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Une valeur de filtre OpenAlex ne doit contenir ni virgule ni barre verticale (séparateurs). */
 const clean = (s: string) => s.replace(/[,|:]/g, " ").replace(/\s+/g, " ").trim();
@@ -102,19 +103,23 @@ function abstractOf(index: Record<string, number[]> | null) {
 }
 
 function toWork(w: OaWork, countries: string[]): Work {
-  const authors: Author[] = w.authorships.map((a) => ({
-    name: a.author.display_name,
-    openalex: shortId(a.author.id),
-    orcid: a.author.orcid?.replace("https://orcid.org/", "") || undefined,
-    institutions: a.institutions.map((i) => ({
-      name: i.display_name,
-      openalex: shortId(i.id),
-      ror: i.ror?.replace("https://ror.org/", "") || undefined,
-      country: i.country_code ?? undefined,
-    })),
-  }));
+  const authors: Author[] = (w.authorships ?? [])
+    .filter((a) => a.author?.display_name)
+    .map((a) => ({
+      name: a.author!.display_name!,
+      openalex: shortId(a.author!.id),
+      orcid: a.author!.orcid?.replace("https://orcid.org/", "") || undefined,
+      institutions: (a.institutions ?? [])
+        .filter((i) => i.display_name)
+        .map((i) => ({
+          name: i.display_name!,
+          openalex: shortId(i.id),
+          ror: i.ror?.replace("https://ror.org/", "") || undefined,
+          country: i.country_code ?? undefined,
+        })),
+    }));
   // Les institutions des pays demandés d'abord : ce sont elles qui intéressent l'utilisateur
-  const insts = [...new Map(authors.flatMap((a) => a.institutions).map((i) => [i.openalex, i])).values()].sort(
+  const insts = [...new Map(authors.flatMap((a) => a.institutions).map((i) => [i.openalex || i.name, i])).values()].sort(
     (a, b) => Number(countries.includes(b.country ?? "")) - Number(countries.includes(a.country ?? "")),
   );
   const doi = w.doi?.replace("https://doi.org/", "");
