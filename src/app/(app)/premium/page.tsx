@@ -14,6 +14,7 @@ const plans = (premium: boolean) => [
       `${limits.free.collectesPerDay} collectes par jour`,
       `${limits.free.maxRows} lignes maximum par collecte`,
       "OpenStreetMap, recherche web et sites des établissements",
+      "Publications scientifiques et leurs auteurs (OpenAlex)",
       "Export CSV et JSON",
     ],
   },
