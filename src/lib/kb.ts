@@ -306,21 +306,25 @@ export async function ingestWorks(works: Work[]) {
           type: "personne",
           name: a.name,
           category: f.discipline ? String(f.discipline) : null,
-          fields: { orcid: a.orcid, openalex: a.openalex, affiliation: a.institutions[0]?.name, discipline: f.discipline },
-          url: a.orcid ? `https://orcid.org/${a.orcid}` : `https://openalex.org/${a.openalex}`,
+          fields: { orcid: a.orcid, openalex: a.openalex || undefined, affiliation: a.institutions[0]?.name, discipline: f.discipline },
+          url: a.orcid ? `https://orcid.org/${a.orcid}` : a.openalex ? `https://openalex.org/${a.openalex}` : null,
         },
         src,
       );
       if (!person) continue;
       await linkEntities(person, "auteur_de", pub, src);
       for (const i of a.institutions.slice(0, 3)) {
-        if (!orgIds.has(i.openalex)) {
+        const id = i.openalex || i.name;
+        if (!orgIds.has(id)) {
           orgIds.set(
-            i.openalex,
-            await upsertEntity({ type: "organisation", name: i.name, fields: { pays: i.country, ror: i.ror, openalex: i.openalex }, url: `https://openalex.org/${i.openalex}` }, src),
+            id,
+            await upsertEntity(
+              { type: "organisation", name: i.name, fields: { pays: i.country, ror: i.ror, openalex: i.openalex || undefined }, url: i.openalex ? `https://openalex.org/${i.openalex}` : null },
+              src,
+            ),
           );
         }
-        const org = orgIds.get(i.openalex);
+        const org = orgIds.get(id);
         if (org) await linkEntities(person, "membre_de", org, src);
       }
     }
