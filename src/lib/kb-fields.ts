@@ -131,7 +131,28 @@ export const isExtraKey = (k: unknown): k is string => typeof k === "string" && 
 export type ColumnTarget = KbField | string | null;
 
 /** Libellé d'une information de la base (champ connu ou colonne gardée telle quelle). */
-export const fieldLabel = (k: string) => (isExtraKey(k) ? k.slice(EXTRA_PREFIX.length).replace(/_/g, " ") : (KB_LABELS[k as KbField] ?? k));
+export const fieldLabel = (k: string) =>
+  isExtraKey(k) ? k.slice(EXTRA_PREFIX.length).replace(/_/g, " ") : (KB_LABELS[k as KbField] ?? OTHER_LABELS[k] ?? k);
+
+/** Libellés des champs propres aux organisations, personnes et publications. */
+const OTHER_LABELS: Record<string, string> = {
+  date: "Date",
+  annee: "Année",
+  revue: "Revue",
+  doi: "DOI",
+  discipline: "Discipline",
+  resume: "Résumé",
+  langue: "Langue",
+  type_document: "Type de document",
+  lien: "Lien",
+  openalex: "OpenAlex",
+  sigle: "Sigle",
+  pays: "Pays",
+  ror: "ROR",
+  orcid: "ORCID",
+  affiliation: "Affiliation",
+  page_profil: "Page de profil",
+};
 
 /**
  * Proposition par défaut : les colonnes sensibles sont retirées, les colonnes reconnues vont dans leur champ
@@ -147,4 +168,67 @@ export function defaultTargets(headers: string[]): ColumnTarget[] {
     used.add(target);
     return target;
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* Types de fiches                                                     */
+/* ------------------------------------------------------------------ */
+
+export const ENTITY_TYPES = ["lieu", "organisation", "personne", "publication"] as const;
+export type EntityType = (typeof ENTITY_TYPES)[number];
+export const isEntityType = (t: unknown): t is EntityType => (ENTITY_TYPES as readonly string[]).includes(t as string);
+
+export const ENTITY_LABELS: Record<EntityType, { one: string; many: string }> = {
+  lieu: { one: "Lieu", many: "Lieux" },
+  organisation: { one: "Organisation", many: "Organisations" },
+  personne: { one: "Personne", many: "Personnes" },
+  publication: { one: "Publication", many: "Publications" },
+};
+
+/** Liens possibles entre fiches. */
+export const RELATIONS = ["auteur_de", "membre_de", "situe_a"] as const;
+export type Relation = (typeof RELATIONS)[number];
+
+/** Champs gardés pour les types autres que les lieux (ceux-ci reprennent KB_FIELDS). */
+const PUBLICATION_FIELDS = ["date", "annee", "revue", "doi", "discipline", "resume", "langue", "type_document", "lien", "openalex"] as const;
+const ORGANISATION_FIELDS = ["sigle", "pays", "type", "description", "adresse", "ville", "telephone", "site_web", "email", "openalex", "ror"] as const;
+/**
+ * Une personne n'est gardée que sous son identité professionnelle publique (telle qu'elle signe ses travaux).
+ * Jamais de téléphone, d'e-mail, d'adresse ni de photo : ces champs ne figurent pas dans la liste.
+ */
+const PERSONNE_FIELDS = ["orcid", "discipline", "affiliation", "page_profil", "openalex"] as const;
+
+export const ENTITY_FIELDS: Record<EntityType, readonly string[]> = {
+  lieu: KB_FIELDS,
+  organisation: ORGANISATION_FIELDS,
+  personne: PERSONNE_FIELDS,
+  publication: PUBLICATION_FIELDS,
+};
+
+/** Un champ accepté pour ce type de fiche (les colonnes gardées telles quelles ne valent que pour les lieux). */
+export const acceptsField = (type: EntityType, f: string) => ENTITY_FIELDS[type].includes(f) || (type === "lieu" && isExtraKey(f));
+
+const idOf = (v: unknown) =>
+  String(v ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\/(dx\.)?(doi\.org|orcid\.org|openalex\.org|ror\.org)\//, "");
+
+/**
+ * Clé unique d'une fiche dans son type. Un lieu garde la clé historique nom|ville ; les autres types
+ * préfèrent un identifiant public (DOI, ORCID, OpenAlex, ROR) et se rabattent sur le nom.
+ */
+export function entityKey(type: EntityType, name: string, opts: { city?: string | null; fields?: Record<string, unknown> } = {}): string {
+  const f = opts.fields ?? {};
+  const by = (...ids: string[]) => ids.map((k) => (idOf(f[k]) ? `${k}:${idOf(f[k])}` : "")).find(Boolean);
+  switch (type) {
+    case "lieu":
+      return kbKey(name, opts.city ?? "");
+    case "publication":
+      return by("doi", "openalex") ?? `titre:${norm(name)}|${norm(f.annee ?? String(f.date ?? "").slice(0, 4))}`;
+    case "personne":
+      return by("orcid", "openalex") ?? `nom:${norm(name)}|${norm(f.affiliation)}`;
+    case "organisation":
+      return by("ror", "openalex") ?? `nom:${norm(name)}|${norm(opts.city ?? f.pays)}`;
+  }
 }

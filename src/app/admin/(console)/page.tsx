@@ -75,8 +75,12 @@ export default async function Page() {
     getOverview(),
     listCollectes({ limit: 8 }),
     db
-      .select({ total: count(), week: sql<number>`count(*) filter (where ${schema.kbEntities.createdAt} > now() - interval '7 days')`.mapWith(Number) })
-      .from(schema.kbEntities),
+      .select({
+        total: count(),
+        places: sql<number>`count(*) filter (where ${schema.entities.type} = 'lieu')`.mapWith(Number),
+        week: sql<number>`count(*) filter (where ${schema.entities.createdAt} > now() - interval '7 days')`.mapWith(Number),
+      })
+      .from(schema.entities),
     db.select({ pending: count() }).from(schema.contributions).where(eq(schema.contributions.status, "pending")),
   ]);
   const totalCountry = o.countries.reduce((n, c) => n + c.n, 0);
@@ -94,7 +98,7 @@ export default async function Page() {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Link href="/admin/base" className="rounded-lg focus-visible:outline-2">
-          <Stat label="Base Luka" value={int(kb.total)} hint={`établissements connus · +${int(kb.week)} en 7 jours`} />
+          <Stat label="Base Luka" value={int(kb.total)} hint={`${int(kb.places)} lieux${kb.total > kb.places ? ` · ${int(kb.total - kb.places)} autres fiches` : ""} · +${int(kb.week)} en 7 jours`} />
         </Link>
         <Link href="/admin/contributions" className="rounded-lg focus-visible:outline-2">
           <Stat label="Contributions à vérifier" value={int(contrib.pending)} hint="fichiers envoyés par les utilisateurs" />

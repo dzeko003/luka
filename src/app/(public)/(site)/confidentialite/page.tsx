@@ -7,7 +7,7 @@ export default function Page() {
   return (
     <LegalPage
       title="Politique de confidentialité"
-      updated="20 novembre 2026"
+      updated="26 novembre 2026"
       intro={
         <p>
           Cette page explique quelles données Luka enregistre, pourquoi, avec qui elles sont partagées et comment exercer tes droits.
@@ -72,7 +72,7 @@ export default function Page() {
         },
         {
           id: "base",
-          title: "Base Luka : réutilisation des données d'établissements",
+          title: "Base Luka : réutilisation des données publiques",
           body: (
             <>
               <p>
@@ -98,8 +98,15 @@ export default function Page() {
                 utilisateurs, avec la mention « Base Luka ».
               </p>
               <p>
+                La base peut aussi contenir des <strong>organisations</strong> (universités, institutions…), des{" "}
+                <strong>publications</strong> (articles, thèses, rapports) et les <strong>auteurs</strong> de ces publications. Une
+                personne n&apos;y figure que sous son identité professionnelle publique, telle qu&apos;elle signe ses travaux : nom,
+                identifiant ORCID, discipline et affiliation. Luka n&apos;y garde jamais son téléphone, son e-mail, son adresse ni sa
+                photo, même si une source les publie.
+              </p>
+              <p>
                 Un établissement ou une personne qui souhaite faire retirer ou corriger une information peut nous écrire à <Contact /> :
-                la fiche est corrigée ou supprimée.
+                la fiche est corrigée ou supprimée, avec ses liens (par exemple, une personne et la liste de ses publications).
               </p>
             </>
           ),
