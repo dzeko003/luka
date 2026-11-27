@@ -25,6 +25,44 @@ export class LlmError extends Error {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Durée renvoyée par le fournisseur (« 7.66s », « 1m26.4s », « 577ms » ou un nombre de secondes) → millisecondes. */
+export function parseDuration(v: string | null): number | null {
+  if (!v) return null;
+  const s = v.trim();
+  if (/^\d+(\.\d+)?$/.test(s)) return Number(s) * 1000;
+  const m = s.match(/^(?:(\d+)h)?(?:(\d+)m(?!s))?(?:(\d+(?:\.\d+)?)s)?(?:(\d+(?:\.\d+)?)ms)?$/);
+  if (!m || !s) return null;
+  const [, h, min, sec, ms] = m;
+  return ((Number(h ?? 0) * 60 + Number(min ?? 0)) * 60 + Number(sec ?? 0)) * 1000 + Number(ms ?? 0);
+}
+
+/**
+ * Les offres gratuites limitent les tokens par minute (8 000 chez Groq) : une seule extraction de pages web peut
+ * presque tout consommer. On retient ce que le fournisseur annonce (tokens restants, délai de recharge), partagé
+ * par toutes les collectes du processus, et on attend la recharge avant d'envoyer une requête qui dépasserait.
+ */
+const budget = { remaining: Infinity, resetAt: 0 };
+/** Estimation grossière : environ 4 caractères par token, plus la réponse attendue. */
+const estimateTokens = (messages: ChatMessage[], maxTokens: number) =>
+  Math.ceil(messages.reduce((n, m) => n + m.content.length, 0) / 4) + Math.min(maxTokens, 1500);
+/** Au-delà, la limite atteinte est journalière : attendre ne servirait à rien. */
+const MAX_WAIT_MS = 65_000;
+
+function rememberBudget(headers: Headers) {
+  const remaining = Number(headers.get("x-ratelimit-remaining-tokens"));
+  const reset = parseDuration(headers.get("x-ratelimit-reset-tokens"));
+  if (Number.isFinite(remaining) && headers.has("x-ratelimit-remaining-tokens")) {
+    budget.remaining = remaining;
+    budget.resetAt = Date.now() + (reset ?? 60_000);
+  }
+}
+
+async function waitForBudget(needed: number) {
+  const wait = budget.resetAt - Date.now();
+  if (needed > budget.remaining && wait > 0) await sleep(Math.min(wait + 250, MAX_WAIT_MS));
+  if (Date.now() >= budget.resetAt) budget.remaining = Infinity;
+}
+
 /** Appelle le modèle et renvoie un objet JSON (réponse forcée au format JSON). */
 export async function chatJson<T = unknown>(
   messages: ChatMessage[],
@@ -43,9 +81,11 @@ export async function chatJson<T = unknown>(
     response_format: { type: "json_object" },
   };
 
-  // Jusqu'à 4 tentatives : les offres gratuites renvoient souvent 429 (quota/minute)
+  const needed = estimateTokens(messages, body.max_tokens);
+  // Jusqu'à 5 tentatives : les offres gratuites renvoient souvent 429 (limite par minute)
   let lastErr: LlmError | undefined;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await waitForBudget(needed);
     const res = await fetch(`${llmFree.baseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: {
@@ -56,11 +96,17 @@ export async function chatJson<T = unknown>(
       signal: AbortSignal.timeout(90_000),
     });
 
+    rememberBudget(res.headers);
     if (res.status === 429 || res.status >= 500) {
-      const retryAfter = Number(res.headers.get("retry-after"));
-      const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2000 * 2 ** attempt;
+      // Délai annoncé par le fournisseur ; sinon attente croissante, jusqu'à la recharge complète d'une minute
+      const announced = parseDuration(res.headers.get("retry-after")) ?? parseDuration(res.headers.get("x-ratelimit-reset-tokens"));
+      const wait = announced ?? Math.min(5000 * 2 ** attempt, 60_000);
       lastErr = new LlmError(`Fournisseur IA saturé (${res.status})`, res.status);
-      await sleep(Math.min(wait, 30_000));
+      if (wait > MAX_WAIT_MS) {
+        lastErr = new LlmError(`Fournisseur IA saturé (${res.status}) : limite journalière atteinte`, res.status);
+        break;
+      }
+      await sleep(wait + 250);
       continue;
     }
     if (!res.ok) {
