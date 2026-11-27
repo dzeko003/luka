@@ -1,5 +1,5 @@
 import { db, schema } from "@/db";
-import { llmFree } from "./config";
+import { type LlmProvider, llmProviders } from "./config";
 
 /**
  * Client minimal pour toute API compatible OpenAI (Groq, OpenRouter, Cerebras,
@@ -36,82 +36,123 @@ export function parseDuration(v: string | null): number | null {
   return ((Number(h ?? 0) * 60 + Number(min ?? 0)) * 60 + Number(sec ?? 0)) * 1000 + Number(ms ?? 0);
 }
 
-/**
- * Les offres gratuites limitent les tokens par minute (8 000 chez Groq) : une seule extraction de pages web peut
- * presque tout consommer. On retient ce que le fournisseur annonce (tokens restants, délai de recharge), partagé
- * par toutes les collectes du processus, et on attend la recharge avant d'envoyer une requête qui dépasserait.
- */
-const budget = { remaining: Infinity, resetAt: 0 };
 /** Estimation grossière : environ 4 caractères par token, plus la réponse attendue. */
 const estimateTokens = (messages: ChatMessage[], maxTokens: number) =>
   Math.ceil(messages.reduce((n, m) => n + m.content.length, 0) / 4) + Math.min(maxTokens, 1500);
-/** Au-delà, la limite atteinte est journalière : attendre ne servirait à rien. */
+/** Au-delà, attendre ne vaut pas le coup : le fournisseur est mis de côté jusqu'à sa recharge. */
 const MAX_WAIT_MS = 65_000;
 
-function rememberBudget(headers: Headers) {
+/**
+ * État de chaque fournisseur, partagé par toutes les collectes du processus. Les offres gratuites limitent les
+ * tokens par minute et par jour : on retient ce que le fournisseur annonce (tokens restants, délai de recharge)
+ * et on passe au suivant plutôt que d'attendre, sauf si tous sont momentanément pleins.
+ */
+type ProviderState = { remaining: number; resetAt: number; blockedUntil: number; json: boolean; why?: string };
+const states = new Map<string, ProviderState>();
+const stateOf = (p: LlmProvider) => {
+  let st = states.get(p.name);
+  if (!st) states.set(p.name, (st = { remaining: Infinity, resetAt: 0, blockedUntil: 0, json: true }));
+  return st;
+};
+
+/** Moment où le fournisseur peut recevoir une requête de `needed` tokens. */
+function readyAt(p: LlmProvider, needed: number, now: number) {
+  const st = stateOf(p);
+  if (st.resetAt <= now) st.remaining = Infinity;
+  const budgetAt = needed > st.remaining ? st.resetAt : now;
+  return Math.max(st.blockedUntil, budgetAt);
+}
+
+function rememberBudget(st: ProviderState, headers: Headers) {
+  if (!headers.has("x-ratelimit-remaining-tokens")) return;
   const remaining = Number(headers.get("x-ratelimit-remaining-tokens"));
-  const reset = parseDuration(headers.get("x-ratelimit-reset-tokens"));
-  if (Number.isFinite(remaining) && headers.has("x-ratelimit-remaining-tokens")) {
-    budget.remaining = remaining;
-    budget.resetAt = Date.now() + (reset ?? 60_000);
-  }
+  if (!Number.isFinite(remaining)) return;
+  st.remaining = remaining;
+  st.resetAt = Date.now() + (parseDuration(headers.get("x-ratelimit-reset-tokens")) ?? 60_000);
 }
 
-async function waitForBudget(needed: number) {
-  const wait = budget.resetAt - Date.now();
-  if (needed > budget.remaining && wait > 0) await sleep(Math.min(wait + 250, MAX_WAIT_MS));
-  if (Date.now() >= budget.resetAt) budget.remaining = Infinity;
+function setAside(p: LlmProvider, ms: number, why: string) {
+  const st = stateOf(p);
+  st.blockedUntil = Date.now() + ms;
+  st.why = why;
+  if (ms > MAX_WAIT_MS) console.warn(`[llm] ${p.name} mis de côté ${Math.round(ms / 60_000)} min : ${why}`);
 }
 
-/** Appelle le modèle et renvoie un objet JSON (réponse forcée au format JSON). */
+/** Fournisseurs configurés et leur état (pour l'administration et les tests). */
+export function providersStatus() {
+  const now = Date.now();
+  return llmProviders.map((p) => {
+    const st = stateOf(p);
+    return { name: p.name, available: st.blockedUntil <= now, until: st.blockedUntil > now ? new Date(st.blockedUntil) : null, why: st.why };
+  });
+}
+
+/** Appelle le modèle et renvoie un objet JSON. En cas de saturation, les fournisseurs suivants prennent le relais. */
 export async function chatJson<T = unknown>(
   messages: ChatMessage[],
   ctx: LlmContext,
   opts: { maxTokens?: number; temperature?: number } = {},
 ): Promise<{ data: T; tokens: number }> {
-  if (!llmFree.apiKey) {
+  if (!llmProviders.length) {
     throw new LlmError("LLM_API_KEY manquante : configure un fournisseur d'IA dans .env.local");
   }
-
-  const body = {
-    model: llmFree.model,
-    messages,
-    temperature: opts.temperature ?? 0.1,
-    max_tokens: opts.maxTokens ?? 2048,
-    response_format: { type: "json_object" },
-  };
-
-  const needed = estimateTokens(messages, body.max_tokens);
-  // Jusqu'à 5 tentatives : les offres gratuites renvoient souvent 429 (limite par minute)
+  const maxTokens = opts.maxTokens ?? 2048;
+  const needed = estimateTokens(messages, maxTokens);
   let lastErr: LlmError | undefined;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    await waitForBudget(needed);
-    const res = await fetch(`${llmFree.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${llmFree.apiKey}`,
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(90_000),
-    });
+  const maxAttempts = llmProviders.length * 3 + 3;
 
-    rememberBudget(res.headers);
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // Le premier fournisseur disponible dans l'ordre ; sinon celui qui se libère le plus tôt, s'il vaut l'attente
+    const now = Date.now();
+    const ranked = llmProviders.map((p) => ({ p, at: readyAt(p, needed, now) }));
+    const pick = ranked.find((r) => r.at <= now) ?? [...ranked].sort((a, b) => a.at - b.at)[0];
+    const wait = pick.at - now;
+    if (wait > MAX_WAIT_MS) break;
+    if (wait > 0) await sleep(wait + 250);
+    const p = pick.p;
+    const st = stateOf(p);
+
+    let res: Response;
+    try {
+      res = await fetch(`${p.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${p.apiKey}` },
+        body: JSON.stringify({
+          model: p.model,
+          messages,
+          temperature: opts.temperature ?? 0.1,
+          max_tokens: maxTokens,
+          ...(st.json ? { response_format: { type: "json_object" } } : {}),
+        }),
+        signal: AbortSignal.timeout(90_000),
+      });
+    } catch (e) {
+      lastErr = new LlmError(`Fournisseur IA injoignable (${p.provider}) : ${(e as Error).message}`);
+      setAside(p, 60_000, "injoignable");
+      continue;
+    }
+    rememberBudget(st, res.headers);
+
     if (res.status === 429 || res.status >= 500) {
-      // Délai annoncé par le fournisseur ; sinon attente croissante, jusqu'à la recharge complète d'une minute
+      // Délai annoncé par le fournisseur ; sinon une minute (recharge des limites par minute)
       const announced = parseDuration(res.headers.get("retry-after")) ?? parseDuration(res.headers.get("x-ratelimit-reset-tokens"));
-      const wait = announced ?? Math.min(5000 * 2 ** attempt, 60_000);
-      lastErr = new LlmError(`Fournisseur IA saturé (${res.status})`, res.status);
-      if (wait > MAX_WAIT_MS) {
-        lastErr = new LlmError(`Fournisseur IA saturé (${res.status}) : limite journalière atteinte`, res.status);
-        break;
-      }
-      await sleep(wait + 250);
+      const ms = announced ?? (res.status === 429 ? 60_000 : 30_000);
+      const daily = ms > MAX_WAIT_MS;
+      lastErr = new LlmError(`Fournisseur IA saturé (${res.status})${daily ? " : limite journalière atteinte" : ""}`, res.status);
+      setAside(p, ms, daily ? "limite journalière" : `saturé (${res.status})`);
       continue;
     }
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new LlmError(`Erreur du fournisseur IA (${res.status}) : ${text.slice(0, 300)}`, res.status);
+      // Certains fournisseurs ou modèles refusent le format JSON imposé : on le retire pour eux
+      if (res.status === 400 && st.json && /response_format|json/i.test(text)) {
+        st.json = false;
+        continue;
+      }
+      lastErr = new LlmError(`Erreur du fournisseur IA (${res.status}) : ${text.slice(0, 300)}`, res.status);
+      // Clé refusée, modèle inconnu… : ce fournisseur est écarté une heure, les autres prennent le relais
+      setAside(p, [401, 403, 404].includes(res.status) ? 3_600_000 : 300_000, `erreur ${res.status}`);
+      continue;
     }
 
     const json = (await res.json()) as {
@@ -125,8 +166,8 @@ export async function chatJson<T = unknown>(
     await db.insert(schema.llmUsage).values({
       userId: ctx.userId,
       collecteId: ctx.collecteId,
-      provider: llmFree.provider,
-      model: llmFree.model,
+      provider: p.provider,
+      model: p.model,
       purpose: ctx.purpose,
       promptTokens,
       completionTokens,
@@ -135,6 +176,7 @@ export async function chatJson<T = unknown>(
     if (!content.trim()) throw new LlmError("Réponse vide du modèle (limite de taille atteinte ?)");
     return { data: parseJson<T>(content), tokens: promptTokens + completionTokens };
   }
+  if (llmProviders.length > 1 && lastErr) lastErr = new LlmError(`Tous les fournisseurs d'IA sont saturés. ${lastErr.message}`, lastErr.status);
   throw lastErr ?? new LlmError("Fournisseur IA indisponible");
 }
 

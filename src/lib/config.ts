@@ -52,18 +52,36 @@ export const limits = {
   hardMaxRows: 50_000,
 };
 
-export const llmFree = {
-  provider: (() => {
+export type LlmProvider = { name: string; provider: string; baseUrl: string; apiKey: string; model: string };
+
+/**
+ * Fournisseurs d'IA, essayés dans l'ordre : LLM_* d'abord, puis LLM_2_*, LLM_3_*… (jusqu'à LLM_20_*).
+ * Un fournisseur supplémentaire reprend l'URL et la clé du précédent s'il ne les précise pas : ajouter
+ * LLM_2_MODEL suffit pour un autre modèle du même fournisseur (chez Groq, chaque modèle a son propre quota).
+ * Une nouvelle adresse (LLM_n_BASE_URL) demande sa propre clé (LLM_n_API_KEY).
+ */
+export const llmProviders: LlmProvider[] = (() => {
+  const list: LlmProvider[] = [];
+  let baseUrl = "https://api.groq.com/openai/v1";
+  let apiKey = "";
+  for (let i = 1; i <= 20; i++) {
+    const p = i === 1 ? "LLM_" : `LLM_${i}_`;
+    const model = process.env[`${p}MODEL`]?.trim() || (i === 1 ? "openai/gpt-oss-120b" : "");
+    const ownUrl = process.env[`${p}BASE_URL`]?.trim();
+    // Une autre adresse veut sa propre clé : celle du fournisseur précédent n'y serait pas valable
+    apiKey = process.env[`${p}API_KEY`]?.trim() || (ownUrl && ownUrl !== baseUrl ? "" : apiKey);
+    baseUrl = ownUrl || baseUrl;
+    if (!model || !apiKey) continue;
+    let provider = "inconnu";
     try {
-      return new URL(process.env.LLM_BASE_URL ?? "").host;
+      provider = new URL(baseUrl).host;
     } catch {
-      return "inconnu";
+      /* URL invalide : l'appel échouera et le fournisseur suivant prendra le relais */
     }
-  })(),
-  baseUrl: process.env.LLM_BASE_URL ?? "https://api.groq.com/openai/v1",
-  apiKey: process.env.LLM_API_KEY ?? "",
-  model: process.env.LLM_MODEL ?? "openai/gpt-oss-120b",
-};
+    list.push({ name: `${provider} · ${model}`, provider, baseUrl: baseUrl.replace(/\/$/, ""), apiKey, model });
+  }
+  return list;
+})();
 
 /** Prix du modèle IA, en dollars par million de jetons (pour estimer le coût par client). */
 export const llmPricing = {
